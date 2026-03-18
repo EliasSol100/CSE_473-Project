@@ -104,8 +104,3 @@ A correct academic explanation is:
 - `about.php` – architecture explanation
 - `api/live_summary.php` – JSON endpoint with current summary data
 - `python/live_to_mysql.py` – live collector to MySQL
-
-## GitHub tip
-
-Upload the whole folder as a repository, but do **not** commit your real `python/.env` file.
-Commit only `.env.example`.
