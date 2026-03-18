@@ -1,54 +1,92 @@
-# Smart Parking Live Web Application
+# Smart Parking NSW Web App
 
-## Architecture
+A professional PHP web platform for monitoring NSW parking occupancy using live and historical data.
 
-- **PHP + XAMPP**: presentation layer
-- **MySQL / phpMyAdmin**: website database
-- **Python collector**: fetches live NSW car park data and writes snapshots into MySQL
-- **Historical data**: can remain in the database so the website still has demo content before live collection starts
+This repository combines:
+- A PHP/MySQL dashboard (Home, Dashboard, Facilities, Insights, About)
+- A MySQL data layer for facilities, occupancy snapshots, and model metrics
+- A Python collector that can pull live data from the NSW Car Park API into MySQL
 
-## Run locally
+## Features
 
-### 1. Put the project in XAMPP
-Copy the folder into:
+- Professional responsive UI across all pages
+- Live KPI dashboard with charts and facility status table
+- Facility search and selected-facility occupancy timeline
+- Insights page with utilization trends and model metrics
+- JSON API summary endpoint at `api/live_summary.php`
+- Auto-refresh on live pages (every 60 seconds)
+
+## Tech Stack
+
+- PHP (XAMPP/Apache)
+- MySQL (phpMyAdmin)
+- Python 3
+- Chart.js
+
+## Project Structure
+
+```text
+smart-parking-php-live/
+|- index.php
+|- dashboard.php
+|- facilities.php
+|- insights.php
+|- about.php
+|- api/
+|  |- live_summary.php
+|- assets/
+|  |- css/style.css
+|  |- js/app.js
+|- includes/
+|  |- config.php
+|  |- db.php
+|  |- functions.php
+|  |- header.php
+|  |- footer.php
+|- database/
+|  |- smart_parking_web.sql
+|- python/
+|  |- live_to_mysql.py
+|  |- requirements.txt
+|  |- run_live_collector.bat
+|- data/
+|  |- parking_cleaned.csv
+|  |- parking_processed.csv
+```
+
+## Local Setup (XAMPP)
+
+1. Place the project in your XAMPP htdocs directory.
 
 ```text
 C:\xampp\htdocs\smart-parking-php-live
 ```
 
-### 2. Start XAMPP
-Start:
-- Apache
-- MySQL
+2. Start `Apache` and `MySQL` in XAMPP.
 
-### 3. Import the database
-Open phpMyAdmin and import:
+3. Import the database schema/data in phpMyAdmin:
 
 ```text
 database/smart_parking_web.sql
 ```
 
-This gives you the website tables plus demo/historical content.
+4. Confirm database settings in `includes/config.php`:
+- host: `127.0.0.1`
+- port: `3306`
+- database: `smart_parking_web`
+- user: `root`
 
-### 4. Open the website
-Go to:
+5. Open the app:
 
 ```text
 http://localhost/smart-parking-php-live/
 ```
 
-## Enable live mode
+## Optional: Enable Live Data Collection
 
-### 1. Get your NSW API key
-Use the same API key you already used in the Python project.
+If you want live NSW updates, configure and run the Python collector.
 
-### 2. Create the Python env file
-Inside the `python` folder:
-- copy `.env.example`
-- rename it to `.env`
-- fill in your real values
-
-Example:
+1. Edit `python/.env` with your real API key and MySQL settings:
 
 ```env
 NSW_API_KEY=your_real_key_here
@@ -61,46 +99,53 @@ COLLECT_INTERVAL_SECONDS=300
 REQUEST_SLEEP=0.15
 ```
 
-### 3. Install Python dependencies
-From the project root or the `python` folder:
+2. Install Python dependencies:
 
 ```bash
 pip install -r python/requirements.txt
 ```
 
-### 4. Run one live collection cycle
+3. Run one collection cycle:
 
 ```bash
 python python/live_to_mysql.py --once
 ```
 
-### 5. Run the continuous live collector
+4. Run continuously every 300 seconds:
 
 ```bash
 python python/live_to_mysql.py --loop 300
 ```
 
-That means a new live collection every **300 seconds (5 minutes)**.
+Alternative (Windows):
 
-## What is live and what is not
+```bat
+python\run_live_collector.bat
+```
 
-- The **website** is PHP and reads the newest rows from MySQL.
-- The **live part** comes from the Python collector, not from PHP alone.
-- The pages auto-refresh every **60 seconds** so newly inserted snapshots appear without manual reload.
-- The demo SQL import contains historical data too, so the site still looks complete before live collection starts.
+Collector logs are written to:
 
-## Important explanation for the teacher
+```text
+logs/live_to_mysql.log
+```
 
-A correct academic explanation is:
+## API Endpoint
 
-> The frontend is implemented as a simple PHP/MySQL web application, while the backend live-data ingestion is performed by Python scripts that poll the NSW Car Park API and update the MySQL database used by the website.
+The app exposes a JSON summary endpoint:
 
-## Project pages
+```text
+http://localhost/smart-parking-php-live/api/live_summary.php
+```
 
-- `index.php` – overview
-- `dashboard.php` – live KPIs and charts
-- `facilities.php` – latest facility table and per-facility timeline
-- `insights.php` – analysis and model metrics
-- `about.php` – architecture explanation
-- `api/live_summary.php` – JSON endpoint with current summary data
-- `python/live_to_mysql.py` – live collector to MySQL
+Response includes:
+- `summary`
+- `dataset`
+- `latest`
+- `hourly`
+- `distribution`
+
+## Notes
+
+- `python/.env` is ignored by git (not committed).
+- The website can still run without live collection by using imported database data.
+- Live ingestion is handled by Python; PHP reads from MySQL and renders the UI.
