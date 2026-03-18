@@ -1,6 +1,4 @@
-# Smart Parking PHP Live Web
-
-This version keeps the simple PHP/XAMPP website and connects it to the original Python live-data idea from the Smart Parking project.
+# Smart Parking Live Web Application
 
 ## Architecture
 
