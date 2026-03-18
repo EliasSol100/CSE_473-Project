@@ -1,0 +1,19 @@
+# Secrets
+python/.env
+
+# Python cache
+python/__pycache__/
+**/__pycache__/
+*.pyc
+
+# Logs
+logs/
+*.log
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Optional local config
+includes/config.local.php
