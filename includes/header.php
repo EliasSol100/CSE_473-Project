@@ -10,15 +10,16 @@
 </head>
 <body>
 <header class="site-header">
+    <div class="header-glow" aria-hidden="true"></div>
     <div class="container nav-wrap">
-        <a class="brand" href="index.php">
-            <span class="brand-mark">P</span>
-            <div>
-                <strong>Smart Parking Web</strong>
-                <small>PHP frontend + Python live collector</small>
+        <a class="brand" href="index.php" aria-label="Smart Parking NSW home">
+            <span class="brand-mark">SP</span>
+            <div class="brand-copy">
+                <strong>Smart Parking NSW</strong>
+                <small>Live Occupancy Intelligence Platform</small>
             </div>
         </a>
-        <nav class="main-nav">
+        <nav class="main-nav" aria-label="Primary">
             <a class="<?= nav_active('index.php') ?>" href="index.php">Home</a>
             <a class="<?= nav_active('dashboard.php') ?>" href="dashboard.php">Dashboard</a>
             <a class="<?= nav_active('facilities.php') ?>" href="facilities.php">Facilities</a>
