@@ -14,7 +14,8 @@ This repository combines:
 - Facility search and selected-facility occupancy timeline
 - Insights page with utilization trends and model metrics
 - JSON API summary endpoint at `api/live_summary.php`
-- Auto-refresh on live pages (every 60 seconds)
+- Dashboard-triggered live sync every 10 seconds while the dashboard is open, without a full page refresh
+- Manual Python collector still available as an optional fallback
 
 ## Tech Stack
 
@@ -33,6 +34,7 @@ smart-parking-php-live/
 |- insights.php
 |- about.php
 |- api/
+|  |- collect_live.php
 |  |- live_summary.php
 |- assets/
 |  |- css/style.css
@@ -40,6 +42,7 @@ smart-parking-php-live/
 |- includes/
 |  |- config.php
 |  |- db.php
+|  |- live_collector.php
 |  |- functions.php
 |  |- header.php
 |  |- footer.php
@@ -82,9 +85,29 @@ database/smart_parking_web.sql
 http://localhost/smart-parking-php-live/
 ```
 
-## Optional: Enable Live Data Collection
+## Automatic Live Data Collection From Dashboard
 
-If you want live NSW updates, configure and run the Python collector.
+The dashboard can now trigger live NSW parking syncs on its own. When `dashboard.php` is open, the browser calls `api/collect_live.php`, which:
+
+- reads the NSW API key from `.env` or `python/.env`
+- pulls facility details from the NSW API
+- writes fresh data into MySQL
+- rate-limits itself so it runs at most once every 10 seconds
+- refreshes dashboard cards, charts, and tables in place through AJAX
+
+No command prompt window is required for this dashboard-driven sync mode.
+
+Optional environment values for the PHP collector:
+
+```env
+DASHBOARD_COLLECT_INTERVAL_SECONDS=10
+DASHBOARD_REQUEST_TIMEOUT_SECONDS=20
+DASHBOARD_MAX_PARALLEL_REQUESTS=10
+```
+
+## Optional: Manual Python Collector
+
+If you still want a separate background collector outside the dashboard, configure and run the Python script.
 
 1. Edit `python/.env` with your real API key and MySQL settings:
 
@@ -141,6 +164,7 @@ Response includes:
 - `summary`
 - `dataset`
 - `latest`
+- `top_latest`
 - `hourly`
 - `distribution`
 
@@ -148,4 +172,4 @@ Response includes:
 
 - `python/.env` is ignored by git (not committed).
 - The website can still run without live collection by using imported database data.
-- Live ingestion is handled by Python; PHP reads from MySQL and renders the UI.
+- Live ingestion can be handled automatically by the dashboard PHP sync or by the optional Python collector.

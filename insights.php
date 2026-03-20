@@ -1,28 +1,39 @@
 <?php
 $pageTitle = 'Insights';
-require_once __DIR__ . '/includes/header.php';
-$peak = peak_hour();
-$topAverage = top_average_occupancy(10);
-$capacityLeaders = capacity_leaders(10);
-$regMetrics = regression_metrics();
-$clsMetrics = classification_metrics();
-$dataset = dataset_overview();
-$topAvgLabels = array_map(fn($row) => $row['facility_name'], array_slice($topAverage, 0, 8));
-$topAvgValues = array_map(fn($row) => (float) $row['average_occupancy'], array_slice($topAverage, 0, 8));
-$capLabels = array_map(fn($row) => $row['facility_name'], array_slice($capacityLeaders, 0, 8));
-$capValues = array_map(fn($row) => (int) $row['capacity'], array_slice($capacityLeaders, 0, 8));
-$avgAccuracy = 0;
-if ($clsMetrics) {
-    $avgAccuracy = array_sum(array_map(fn($row) => (float) $row['accuracy'], $clsMetrics)) / count($clsMetrics) * 100;
+require_once __DIR__ . '/includes/page_payloads.php';
+require_once __DIR__ . '/includes/live_collector.php';
+
+$collectorIntervalMs = 10000;
+try {
+    $collectorIntervalMs = max(10000, ((int) (live_collector_config()['interval_seconds'] ?? 10)) * 1000);
+} catch (Throwable) {
+    $collectorIntervalMs = 10000;
 }
+$collectorIntervalSeconds = max(1, (int) round($collectorIntervalMs / 1000));
+$insightsPayload = insights_page_payload();
+$peak = $insightsPayload['peak'];
+$dataset = $insightsPayload['dataset'];
+$regMetrics = $insightsPayload['regression_metrics'];
+$clsMetrics = $insightsPayload['classification_metrics'];
+
+require_once __DIR__ . '/includes/header.php';
 ?>
-<div class="container">
-    <div class="section-title"><div><h2>Insights and model performance</h2><p>Analytical highlights that explain utilization behavior and baseline model quality.</p></div></div>
+<div class="container" data-live-collector-url="api/collect_live.php" data-live-insights-url="api/insights_summary.php" data-live-collector-interval="<?= h((string) $collectorIntervalMs) ?>">
+    <div class="section-title">
+        <div>
+            <h2>Insights and model performance</h2>
+            <p>Analytical highlights that explain utilization behavior and baseline model quality.</p>
+        </div>
+        <div class="tag-row section-tags">
+            <span class="tag" data-insights-last-refresh>Latest network refresh: <?= h(display_datetime($insightsPayload['summary']['last_refresh'] ?? null)) ?></span>
+            <span class="tag" data-live-collector-status>Auto sync every <?= h((string) $collectorIntervalSeconds) ?> seconds while this Insights page is open</span>
+        </div>
+    </div>
 
     <section class="info-grid">
-        <article class="notice"><h3>Peak observed hour</h3><p class="muted">The highest average occupancy appears at <strong><?= h(sprintf('%02d:00', (int) ($peak['hour'] ?? 0))) ?></strong>, reaching <strong><?= h(format_percentage($peak['average_occupancy'] ?? 0)) ?></strong>.</p></article>
-        <article class="notice"><h3>Coverage window</h3><p class="muted">Current records include <strong><?= h(format_number($dataset['observations'] ?? 0)) ?></strong> observations from <strong><?= h(display_datetime($dataset['min_time'] ?? null)) ?></strong> to <strong><?= h(display_datetime($dataset['max_time'] ?? null)) ?></strong>.</p></article>
-        <article class="notice"><h3>Classification context</h3><p class="muted">Average classification accuracy is <strong><?= h(format_percentage($avgAccuracy, 1)) ?></strong>. Strong results can reflect class imbalance, so this metric should be interpreted with class distribution in mind.</p></article>
+        <article class="notice"><h3>Peak observed hour</h3><p class="muted">The highest average occupancy appears at <strong data-insights-peak-hour><?= h(sprintf('%02d:00', (int) ($peak['hour'] ?? 0))) ?></strong>, reaching <strong data-insights-peak-rate><?= h(format_percentage($peak['average_occupancy'] ?? 0)) ?></strong>.</p></article>
+        <article class="notice"><h3>Coverage window</h3><p class="muted">Current records include <strong data-insights-observations><?= h(format_number($dataset['observations'] ?? 0)) ?></strong> observations from <strong data-insights-min-time><?= h(display_datetime($dataset['min_time'] ?? null)) ?></strong> to <strong data-insights-max-time><?= h(display_datetime($dataset['max_time'] ?? null)) ?></strong>.</p></article>
+        <article class="notice"><h3>Classification context</h3><p class="muted">Average classification accuracy is <strong data-insights-avg-accuracy><?= h(format_percentage($insightsPayload['avg_accuracy'] ?? 0, 1)) ?></strong>. Strong results can reflect class imbalance, so this metric should be interpreted with class distribution in mind.</p></article>
     </section>
 
     <section class="chart-grid">
@@ -36,8 +47,8 @@ if ($clsMetrics) {
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>Facility</th><th>Samples</th><th>MAE</th><th>RMSE</th><th>R2</th></tr></thead>
-                    <tbody>
-                        <?php foreach (array_slice($regMetrics, 0, 10) as $row): ?>
+                    <tbody data-insights-regression-body>
+                        <?php foreach ($regMetrics as $row): ?>
                             <tr>
                                 <td><?= h($row['facility_name']) ?></td>
                                 <td><?= h(format_number($row['sample_size'])) ?></td>
@@ -56,8 +67,8 @@ if ($clsMetrics) {
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>Facility</th><th>Samples</th><th>Accuracy</th></tr></thead>
-                    <tbody>
-                        <?php foreach (array_slice($clsMetrics, 0, 10) as $row): ?>
+                    <tbody data-insights-classification-body>
+                        <?php foreach ($clsMetrics as $row): ?>
                             <tr>
                                 <td><?= h($row['facility_name']) ?></td>
                                 <td><?= h(format_number($row['sample_size'])) ?></td>
@@ -73,17 +84,15 @@ if ($clsMetrics) {
     <section class="notice"><h3>How to read this page</h3><p class="muted">Use these metrics as decision support: utilization trends identify demand pressure, while model scores indicate how reliably the current feature set predicts occupancy behavior.</p></section>
 </div>
 <script>
-const topAvgLabels = <?= json_encode($topAvgLabels) ?>;
-const topAvgValues = <?= json_encode($topAvgValues) ?>;
-const capLabels = <?= json_encode($capLabels) ?>;
-const capValues = <?= json_encode($capValues) ?>;
-new Chart(document.getElementById('topAverageChart'), {
+window.insightsState = <?= json_encode($insightsPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+window.insightsCharts = {};
+window.insightsCharts.topAverage = new Chart(document.getElementById('topAverageChart'), {
     type: 'bar',
     data: {
-        labels: topAvgLabels,
+        labels: <?= json_encode($insightsPayload['top_average_labels']) ?>,
         datasets: [{
             label: 'Average occupancy %',
-            data: topAvgValues,
+            data: <?= json_encode($insightsPayload['top_average_values']) ?>,
             borderWidth: 0,
             borderRadius: 8,
             backgroundColor: 'rgba(14, 94, 181, 0.82)'
@@ -91,13 +100,13 @@ new Chart(document.getElementById('topAverageChart'), {
     },
     options: { indexAxis: 'y', responsive: true, scales: { x: { beginAtZero: true, max: 100 } } }
 });
-new Chart(document.getElementById('capacityChart'), {
+window.insightsCharts.capacity = new Chart(document.getElementById('capacityChart'), {
     type: 'bar',
     data: {
-        labels: capLabels,
+        labels: <?= json_encode($insightsPayload['capacity_labels']) ?>,
         datasets: [{
             label: 'Capacity',
-            data: capValues,
+            data: <?= json_encode($insightsPayload['capacity_values']) ?>,
             borderWidth: 0,
             borderRadius: 8,
             backgroundColor: 'rgba(14, 165, 168, 0.82)'

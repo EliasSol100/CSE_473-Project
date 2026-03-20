@@ -24,6 +24,7 @@
             <a class="<?= nav_active('dashboard.php') ?>" href="dashboard.php">Dashboard</a>
             <a class="<?= nav_active('facilities.php') ?>" href="facilities.php">Facilities</a>
             <a class="<?= nav_active('insights.php') ?>" href="insights.php">Insights</a>
+            <a class="<?= nav_active('events.php') ?>" href="events.php">Events</a>
             <a class="<?= nav_active('about.php') ?>" href="about.php">About</a>
         </nav>
     </div>

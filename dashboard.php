@@ -1,6 +1,16 @@
 <?php
 $pageTitle = 'Dashboard';
 require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/includes/live_collector.php';
+
+$collectorIntervalMs = 10000;
+try {
+    $collectorIntervalMs = max(10000, ((int) (live_collector_config()['interval_seconds'] ?? 10)) * 1000);
+} catch (Throwable) {
+    $collectorIntervalMs = 10000;
+}
+$collectorIntervalSeconds = max(1, (int) round($collectorIntervalMs / 1000));
+
 $summary = summary_metrics();
 $hourly = hourly_average_occupancy();
 $topLatest = top_latest_facilities(8);
@@ -12,14 +22,30 @@ $topLabels = array_map(fn($row) => $row['facility_name'], $topLatest);
 $topValues = array_map(fn($row) => round(((float) $row['occupancy_rate']) * 100, 2), $topLatest);
 $distLabels = array_map(fn($row) => $row['availability_class'], $distribution);
 $distValues = array_map(fn($row) => (int) $row['total'], $distribution);
+$dashboardPayload = [
+    'summary' => $summary,
+    'top_latest' => $topLatest,
+    'latest' => $latest,
+    'hourly' => $hourly,
+    'distribution' => $distribution,
+];
 ?>
-<div class="container">
-    <div class="section-title"><div><h2>Network operations dashboard</h2><p>Live occupancy health, utilization patterns, and facility-level status across monitored NSW locations.</p></div><span class="tag">Last data refresh: <?= h(display_datetime($summary['last_refresh'] ?? null)) ?></span></div>
+<div class="container" data-live-collector-url="api/collect_live.php" data-live-collector-interval="<?= h((string) $collectorIntervalMs) ?>" data-live-summary-url="api/live_summary.php">
+    <div class="section-title">
+        <div>
+            <h2>Network operations dashboard</h2>
+            <p>Live occupancy health, utilization patterns, and facility-level status across monitored NSW locations.</p>
+        </div>
+        <div class="tag-row section-tags">
+            <span class="tag" data-summary-last-refresh>Last data refresh: <?= h(display_datetime($summary['last_refresh'] ?? null)) ?></span>
+            <span class="tag" data-live-collector-status>Auto sync every <?= h((string) $collectorIntervalSeconds) ?> seconds while this dashboard is open</span>
+        </div>
+    </div>
     <section class="kpi-grid">
-        <article class="card"><h3>Facilities Online</h3><div class="metric"><?= h(format_number($summary['facilities_count'] ?? 0)) ?></div><p class="muted">Locations currently contributing records to the latest network snapshot.</p></article>
-        <article class="card"><h3>Occupied Spaces</h3><div class="metric"><?= h(format_number($summary['occupied_now'] ?? 0)) ?></div><p class="muted">Total spaces currently in use based on the newest facility readings.</p></article>
-        <article class="card"><h3>Available Spaces</h3><div class="metric"><?= h(format_number($summary['available_now'] ?? 0)) ?></div><p class="muted">Estimated free capacity available right now across all monitored facilities.</p></article>
-        <article class="card"><h3>Average Utilization</h3><div class="metric"><?= h(format_percentage($summary['avg_occupancy'] ?? 0)) ?></div><p class="muted">Current mean occupancy percentage for the latest record of each site.</p></article>
+        <article class="card"><h3>Facilities Online</h3><div class="metric" data-summary-facilities><?= h(format_number($summary['facilities_count'] ?? 0)) ?></div><p class="muted">Locations currently contributing records to the latest network snapshot.</p></article>
+        <article class="card"><h3>Occupied Spaces</h3><div class="metric" data-summary-occupied><?= h(format_number($summary['occupied_now'] ?? 0)) ?></div><p class="muted">Total spaces currently in use based on the newest facility readings.</p></article>
+        <article class="card"><h3>Available Spaces</h3><div class="metric" data-summary-available><?= h(format_number($summary['available_now'] ?? 0)) ?></div><p class="muted">Estimated free capacity available right now across all monitored facilities.</p></article>
+        <article class="card"><h3>Average Utilization</h3><div class="metric" data-summary-avg><?= h(format_percentage($summary['avg_occupancy'] ?? 0)) ?></div><p class="muted">Current mean occupancy percentage for the latest record of each site.</p></article>
     </section>
 
     <section class="chart-grid">
@@ -34,7 +60,7 @@ $distValues = array_map(fn($row) => (int) $row['total'], $distribution);
         <div class="table-wrap">
             <table>
                 <thead><tr><th>Facility</th><th>Capacity</th><th>Occupied</th><th>Available</th><th>Occupancy</th><th>Status</th><th>Details</th></tr></thead>
-                <tbody>
+                <tbody data-latest-table-body>
                     <?php foreach ($latest as $row): ?>
                         <?php $percent = (float) $row['occupancy_rate'] * 100; ?>
                         <tr>
@@ -53,6 +79,7 @@ $distValues = array_map(fn($row) => (int) $row['total'], $distribution);
     </section>
 </div>
 <script>
+window.dashboardState = <?= json_encode($dashboardPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 const hourlyLabels = <?= json_encode($hourLabels) ?>;
 const hourlyValues = <?= json_encode($hourValues) ?>;
 const topLabels = <?= json_encode($topLabels) ?>;
@@ -66,7 +93,8 @@ const chartSecondary = rootStyles.getPropertyValue('--chart-secondary').trim() |
 const chartAccent = rootStyles.getPropertyValue('--chart-accent').trim() || '#f59e0b';
 const chartDanger = rootStyles.getPropertyValue('--chart-danger').trim() || '#b0302f';
 
-new Chart(document.getElementById('hourlyChart'), {
+window.dashboardCharts = {};
+window.dashboardCharts.hourly = new Chart(document.getElementById('hourlyChart'), {
     type: 'line',
     data: {
         labels: hourlyLabels,
@@ -88,7 +116,7 @@ new Chart(document.getElementById('hourlyChart'), {
     }
 });
 
-new Chart(document.getElementById('availabilityChart'), {
+window.dashboardCharts.availability = new Chart(document.getElementById('availabilityChart'), {
     type: 'doughnut',
     data: {
         labels: distLabels,
@@ -101,7 +129,7 @@ new Chart(document.getElementById('availabilityChart'), {
     options: { responsive: true }
 });
 
-new Chart(document.getElementById('busiestChart'), {
+window.dashboardCharts.busiest = new Chart(document.getElementById('busiestChart'), {
     type: 'bar',
     data: {
         labels: topLabels,
@@ -119,6 +147,6 @@ new Chart(document.getElementById('busiestChart'), {
         scales: { x: { beginAtZero: true, max: 100 } }
     }
 });
+window.dashboardColors = { chartPrimary, chartSecondary, chartAccent, chartDanger };
 </script>
-<script>setTimeout(() => window.location.reload(), 60000);</script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

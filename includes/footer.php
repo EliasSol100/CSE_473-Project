@@ -12,12 +12,13 @@
                 <a href="dashboard.php">Dashboard</a>
                 <a href="facilities.php">Facilities</a>
                 <a href="insights.php">Insights</a>
+                <a href="events.php">Events</a>
                 <a href="about.php">About</a>
             </div>
         </div>
         <div class="footer-meta">
             <p class="footer-heading">Platform</p>
-            <p>Built with PHP and MySQL, with continuous ingestion from the NSW parking feed for up-to-date occupancy tracking.</p>
+            <p>Built with PHP and MySQL, with automatic NSW parking-feed sync for up-to-date occupancy tracking.</p>
             <p class="footer-note">Designed for operations teams, reporting, and fast decision support.</p>
         </div>
     </div>
