@@ -27,7 +27,7 @@ This repository combines:
 ## Project Structure
 
 ```text
-smart-parking-php-live/
+smart-parking-live/
 |- index.php
 |- dashboard.php
 |- facilities.php
@@ -62,7 +62,7 @@ smart-parking-php-live/
 1. Place the project in your XAMPP htdocs directory.
 
 ```text
-C:\xampp\htdocs\smart-parking-php-live
+C:\xampp\htdocs\smart-parking-live
 ```
 
 2. Start `Apache` and `MySQL` in XAMPP.
@@ -82,7 +82,7 @@ database/smart_parking_web.sql
 5. Open the app:
 
 ```text
-http://localhost/smart-parking-php-live/
+http://localhost/smart-parking-live/
 ```
 
 ## Automatic Live Data Collection From Dashboard
