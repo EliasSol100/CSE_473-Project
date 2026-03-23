@@ -35,6 +35,7 @@ function events_curated_catalog(): array
             'demand_note' => 'Higher evening arrivals, but only part of the crowd is expected to spill into monitored park-and-ride facilities.',
             'distance_decay_km' => 12.5,
             'max_distance_km' => 58,
+            'display_max_distance_km' => 10,
             'network_floor' => 0.03,
             'focus_keywords' => ['seven hills', 'st marys', 'penrith', 'warwick farm', 'west ryde', 'revesby', 'campbelltown', 'edmondson park'],
             'secondary_keywords' => ['bella vista', 'hills showground', 'cherrybrook', 'tallawong', 'kellyville', 'gosford', 'sutherland'],
@@ -61,6 +62,7 @@ function events_curated_catalog(): array
             'demand_note' => 'Daytime championships spread arrivals across the morning, so the peak spillover into monitored commuter parking is moderate.',
             'distance_decay_km' => 13,
             'max_distance_km' => 58,
+            'display_max_distance_km' => 10,
             'network_floor' => 0.025,
             'focus_keywords' => ['seven hills', 'st marys', 'penrith', 'warwick farm', 'west ryde', 'revesby', 'campbelltown', 'edmondson park'],
             'secondary_keywords' => ['bella vista', 'hills showground', 'cherrybrook', 'tallawong', 'kellyville', 'gosford', 'sutherland'],
@@ -87,6 +89,7 @@ function events_curated_catalog(): array
             'demand_note' => 'The event is local, family-oriented and midday-focused, so the forecast assumes strong private-car usage and meaningful spillover into nearby station parking.',
             'distance_decay_km' => 5.8,
             'max_distance_km' => 26,
+            'display_max_distance_km' => 10,
             'network_floor' => 0.01,
             'focus_keywords' => ['bella vista', 'hills showground', 'cherrybrook', 'kellyville', 'tallawong', 'schofields'],
             'secondary_keywords' => ['west ryde', 'north rocks', 'gordon', 'narrabeen', 'warriewood'],
@@ -113,6 +116,7 @@ function events_curated_catalog(): array
             'demand_note' => 'Most visitors will use major transport corridors, but the event is large enough to create a meaningful Sunday surge across the wider network.',
             'distance_decay_km' => 14,
             'max_distance_km' => 60,
+            'display_max_distance_km' => 10,
             'network_floor' => 0.035,
             'focus_keywords' => ['seven hills', 'st marys', 'penrith', 'warwick farm', 'west ryde', 'revesby', 'campbelltown', 'edmondson park'],
             'secondary_keywords' => ['bella vista', 'hills showground', 'cherrybrook', 'tallawong', 'kellyville', 'gosford', 'sutherland'],
@@ -122,29 +126,33 @@ function events_curated_catalog(): array
     ];
 }
 
-function events_default_selected_event_id(): string
+function events_default_selected_event_id(array $events = []): string
 {
-    return 'norwest-quarter-grand-opening-2026-03-22';
+    if ($events !== []) {
+        return (string) ($events[0]['id'] ?? '');
+    }
+
+    $catalog = events_curated_catalog();
+    return (string) ($catalog[0]['id'] ?? '');
 }
 
-function events_upcoming_bundle(): array
+function events_upcoming_bundle(?DateTimeImmutable $referenceNow = null): array
 {
     $allEvents = events_curated_catalog();
-    $today = new DateTimeImmutable('today', events_timezone());
-    $windowEnd = $today->modify('+2 days')->setTime(23, 59, 59);
+    $now = $referenceNow instanceof DateTimeImmutable
+        ? $referenceNow->setTimezone(events_timezone())
+        : new DateTimeImmutable('now', events_timezone());
+    $today = $now->setTime(0, 0, 0);
+    $windowEnd = $today->modify('+6 days')->setTime(23, 59, 59);
     $upcoming = [];
 
     foreach ($allEvents as $event) {
         $start = events_parse_datetime($event['starts_at']);
-        if ($start >= $today && $start <= $windowEnd) {
+        $end = events_parse_datetime($event['ends_at']);
+
+        if ($end >= $now && $start <= $windowEnd) {
             $upcoming[] = $event;
         }
-    }
-
-    $note = null;
-    if ($upcoming === []) {
-        $upcoming = $allEvents;
-        $note = 'No curated official Sydney events matched the next three Sydney calendar days, so the page is showing the nearest researched events instead.';
     }
 
     usort($upcoming, fn(array $a, array $b) => strcmp($a['starts_at'], $b['starts_at']));
@@ -156,23 +164,22 @@ function events_upcoming_bundle(): array
     );
 
     return [
-        'generated_at' => (new DateTimeImmutable('now', events_timezone()))->format('Y-m-d H:i:s'),
+        'generated_at' => $now->format('Y-m-d H:i:s'),
         'window_label' => $today->format('d M') . ' to ' . $windowEnd->format('d M Y'),
         'events' => $forecastedEvents,
-        'note' => $note,
+        'note' => null,
     ];
 }
 
 function events_select_event(array $events, ?string $selectedEventId = null): ?array
 {
     $selectedEventId = trim((string) ($selectedEventId ?? ''));
-    if ($selectedEventId === '') {
-        $selectedEventId = events_default_selected_event_id();
-    }
 
-    foreach ($events as $event) {
-        if (($event['id'] ?? null) === $selectedEventId) {
-            return $event;
+    if ($selectedEventId !== '') {
+        foreach ($events as $event) {
+            if (($event['id'] ?? null) === $selectedEventId) {
+                return $event;
+            }
         }
     }
 
@@ -326,6 +333,12 @@ function events_build_forecast(array $event, array $facilities): array
         }
     );
 
+    $nearbyRadiusKm = events_display_radius_km($event);
+    $nearbyRanked = array_values(array_filter(
+        $impactRanked,
+        static fn(array $row): bool => $row['distance_km'] !== null && $row['distance_km'] <= $nearbyRadiusKm
+    ));
+
     $statusCounts = ['full' => 0, 'limited' => 0, 'available' => 0];
     foreach ($forecasts as $forecast) {
         $normalized = strtolower($forecast['predicted_status']);
@@ -351,6 +364,8 @@ function events_build_forecast(array $event, array $facilities): array
     $event['status_counts'] = $statusCounts;
     $event['forecasts'] = $forecasts;
     $event['impact_ranked'] = $impactRanked;
+    $event['nearby_radius_km'] = $nearbyRadiusKm;
+    $event['nearby_ranked'] = $nearbyRanked;
     $event['top_impact'] = array_slice($impactRanked, 0, 8);
     $event['featured_forecast'] = $featuredForecast;
     $event['network_headline'] = $featuredForecast !== null
@@ -362,6 +377,19 @@ function events_build_forecast(array $event, array $facilities): array
         : 'No forecast data is available for this event yet.';
 
     return $event;
+}
+
+function events_display_radius_km(array $event): float
+{
+    $configured = (float) ($event['display_max_distance_km'] ?? 0);
+    if ($configured > 0) {
+        return $configured;
+    }
+
+    $maxDistance = max(1.0, (float) ($event['max_distance_km'] ?? 20));
+    $decayDistance = max(1.0, (float) ($event['distance_decay_km'] ?? 10));
+
+    return min($maxDistance, max(10.0, round($decayDistance * 1.5)));
 }
 
 function events_baseline_profiles(int $hour, ?int $isWeekend): array

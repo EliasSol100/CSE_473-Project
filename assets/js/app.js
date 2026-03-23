@@ -16,6 +16,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const formatNumber = (value) => numberFormatter.format(Number(value) || 0);
     const formatPercentage = (value, decimals = 1) => `${(Number(value) || 0).toFixed(decimals)}%`;
     const formatDecimal = (value, decimals = 4) => (Number(value) || 0).toFixed(decimals);
+    const formatDistanceKm = (value) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric <= 0) {
+            return '0';
+        }
+
+        return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1).replace(/\.0$/, '');
+    };
+    const renderEventsDistanceEmptyState = (radiusKm) => {
+        const radiusLabel = formatDistanceKm(radiusKm);
+        return `<tr><td colspan="8" class="empty-state">No tracked parking facilities are within ${escapeHtml(radiusLabel)} km of this event venue.</td></tr>`;
+    };
     const escapeHtml = (value) => String(value == null ? '' : value)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -571,20 +583,94 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const eventsFeaturedTitle = (selectedEvent) => {
+        const featuredForecast = selectedEvent && selectedEvent.featured_forecast ? selectedEvent.featured_forecast : null;
+        return featuredForecast && String(featuredForecast.facility_id ?? '') === '3'
+            ? 'Bella Vista Example'
+            : 'Featured Facility';
+    };
+    const buildEventsPageUrl = (selectedEventId) => {
+        const nextUrl = new URL(window.location.href);
+
+        if (selectedEventId) {
+            nextUrl.searchParams.set('event', selectedEventId);
+        } else {
+            nextUrl.searchParams.delete('event');
+        }
+
+        return nextUrl;
+    };
+    const buildEventsSummaryUrl = (host, selectedEventId) => {
+        const baseUrl = host && host.getAttribute('data-live-events-url')
+            ? host.getAttribute('data-live-events-url')
+            : 'api/events_summary.php';
+        const nextUrl = new URL(baseUrl, window.location.href);
+
+        if (selectedEventId) {
+            nextUrl.searchParams.set('event', selectedEventId);
+        } else {
+            nextUrl.searchParams.delete('event');
+        }
+
+        return nextUrl.toString();
+    };
+    const isEventForecastPage = () => {
+        const host = document.querySelector('[data-live-events-url]');
+        return String(host && host.getAttribute('data-live-events-page-type') ? host.getAttribute('data-live-events-page-type') : '')
+            .trim()
+            .toLowerCase() === 'forecast';
+    };
+    const normalizeEventsPayload = (payload, selectedEventId = '') => {
+        const source = payload && typeof payload === 'object' ? payload : {};
+        const events = Array.isArray(source.events) ? source.events : [];
+        const preferredEventId = String(selectedEventId || source.selected_event_id || '');
+        const selectedEvent = events.find((event) => String(event.id ?? '') === preferredEventId) || events[0] || null;
+        const topImpact = selectedEvent && Array.isArray(selectedEvent.top_impact)
+            ? selectedEvent.top_impact
+            : [];
+
+        return {
+            ...source,
+            events,
+            selected_event_id: selectedEvent ? String(selectedEvent.id ?? '') : '',
+            selected_event: selectedEvent,
+            featured_title: eventsFeaturedTitle(selectedEvent),
+            top_impact_labels: topImpact.map((row) => row.facility_name ?? ''),
+            top_impact_values: topImpact.map((row) => Math.round((Number(row.predicted_rate) || 0) * 1000) / 10)
+        };
+    };
+    const syncEventsSelectionState = (host, payload) => {
+        const selectedEventId = String(payload && payload.selected_event_id ? payload.selected_event_id : '');
+
+        if (host) {
+            host.setAttribute('data-live-events-selected', selectedEventId);
+        }
+
+        window.eventsState = payload;
+
+        if (window.history && typeof window.history.replaceState === 'function') {
+            window.history.replaceState(window.history.state, document.title, buildEventsPageUrl(selectedEventId).toString());
+        }
+    };
     const renderEventCards = (events, selectedEventId) => {
         if (!Array.isArray(events) || events.length === 0) {
             return '';
         }
 
         return events.map((event) => {
-            const activeClass = event.id === selectedEventId ? ' active' : '';
+            const eventId = String(event.id ?? '');
+            const isActive = eventId === String(selectedEventId || '');
+            const activeClass = isActive ? ' active' : '';
             const title = event.title ?? '';
             const attendanceLabel = event.attendance_label ?? 'Estimated attendance';
             const attendanceEstimate = formatNumber(event.attendance_estimate);
             const startsAtTag = escapeHtml(String(event.starts_at_display ?? '').split(' ').slice(0, 4).join(' '));
+            const forecastAction = isEventForecastPage() && isActive
+                ? '<span class="btn btn-disabled" aria-disabled="true">Current forecast</span>'
+                : `<a class="btn btn-primary" href="event_forecasts.php?event=${encodeURIComponent(eventId)}">Open forecast</a>`;
 
             return `
-                <article class="panel event-selector${activeClass}">
+                <article class="panel event-selector${activeClass}" data-event-id="${escapeHtml(eventId)}">
                     <div class="tag-row" style="margin-top:0;">
                         <span class="tag">${startsAtTag}</span>
                         <span class="tag">${escapeHtml(attendanceLabel)}: ${escapeHtml(attendanceEstimate)}</span>
@@ -593,7 +679,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p class="muted">${escapeHtml(event.starts_at_display ?? '')} to ${escapeHtml(event.ends_at_display ?? '')} | ${escapeHtml(event.venue_name ?? '')}, ${escapeHtml(event.venue_area ?? '')}</p>
                     <p class="muted">${escapeHtml(event.network_headline ?? '')}</p>
                     <div class="event-actions">
-                        <a class="btn btn-primary" href="events.php?event=${encodeURIComponent(event.id ?? '')}">Open forecast</a>
+                        ${forecastAction}
                         <a class="btn btn-secondary" href="${escapeHtml(event.source_url ?? '#')}" target="_blank" rel="noopener noreferrer">Official source</a>
                     </div>
                 </article>
@@ -651,16 +737,69 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
     };
-    const renderEventsTableRows = (selectedEvent) => {
-        const impactRanked = Array.isArray(selectedEvent && selectedEvent.impact_ranked)
-            ? selectedEvent.impact_ranked
+    const getFilteredEventForecasts = (host, selectedEvent) => {
+        const impactRanked = Array.isArray(selectedEvent && selectedEvent.nearby_ranked)
+            ? selectedEvent.nearby_ranked.slice()
             : [];
+        const searchTerm = (host.querySelector('[data-events-forecast-search]')?.value || '').trim().toLowerCase();
+        const statusFilter = host.querySelector('[data-events-forecast-status]')?.value || 'all';
+        const sortFilter = host.querySelector('[data-events-forecast-sort]')?.value || 'impact_desc';
 
-        if (impactRanked.length === 0) {
-            return '<tr><td colspan="8" class="empty-state">No event forecast rows are available yet.</td></tr>';
+        const filtered = impactRanked.filter((row) => {
+            const searchValue = `${String(row.facility_id ?? '').toLowerCase()} ${String(row.facility_name ?? '').toLowerCase()} ${String(row.predicted_status ?? '').toLowerCase()}`;
+            const status = String(row.predicted_status ?? '').trim().toLowerCase();
+            const matchesSearch = searchTerm === '' || searchValue.includes(searchTerm);
+            const matchesStatus = statusFilter === 'all'
+                || (statusFilter === 'pressured' && (status === 'full' || status === 'limited'))
+                || status === statusFilter;
+
+            return matchesSearch && matchesStatus;
+        });
+
+        filtered.sort((left, right) => {
+            if (sortFilter === 'occupancy_desc') {
+                const leftRate = Number(left.predicted_rate) || 0;
+                const rightRate = Number(right.predicted_rate) || 0;
+                if (leftRate === rightRate) {
+                    return String(left.facility_name ?? '').localeCompare(String(right.facility_name ?? ''));
+                }
+                return rightRate - leftRate;
+            }
+
+            if (sortFilter === 'available_asc') {
+                const leftAvailable = Number(left.predicted_available) || 0;
+                const rightAvailable = Number(right.predicted_available) || 0;
+                if (leftAvailable === rightAvailable) {
+                    return String(left.facility_name ?? '').localeCompare(String(right.facility_name ?? ''));
+                }
+                return leftAvailable - rightAvailable;
+            }
+
+            if (sortFilter === 'name_asc') {
+                return String(left.facility_name ?? '').localeCompare(String(right.facility_name ?? ''));
+            }
+
+            const leftLift = Number(left.event_lift) || 0;
+            const rightLift = Number(right.event_lift) || 0;
+            if (leftLift === rightLift) {
+                const leftRate = Number(left.predicted_rate) || 0;
+                const rightRate = Number(right.predicted_rate) || 0;
+                if (leftRate === rightRate) {
+                    return String(left.facility_name ?? '').localeCompare(String(right.facility_name ?? ''));
+                }
+                return rightRate - leftRate;
+            }
+            return rightLift - leftLift;
+        });
+
+        return filtered;
+    };
+    const renderEventsTableRows = (rows) => {
+        if (!Array.isArray(rows) || rows.length === 0) {
+            return '<tr><td colspan="8" class="empty-state">No nearby facilities match the current filters.</td></tr>';
         }
 
-        return impactRanked.map((row) => {
+        return rows.map((row) => {
             const predictedPercent = Math.max(0, Math.min(100, (Number(row.predicted_rate) || 0) * 100));
             const facilityId = encodeURIComponent(String(row.facility_id ?? ''));
             const searchValue = `${String(row.facility_id ?? '').toLowerCase()} ${String(row.facility_name ?? '').toLowerCase()} ${String(row.predicted_status ?? '').toLowerCase()}`;
@@ -679,14 +818,73 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }).join('');
     };
+    const renderEventsForecastTable = (host, selectedEvent) => {
+        if (!host) {
+            return;
+        }
+
+        const tableBody = host.querySelector('[data-events-table-body]');
+        const tableCount = host.querySelector('[data-events-table-count]');
+        const tableDescription = host.querySelector('[data-events-table-description]');
+        const nearbyRows = Array.isArray(selectedEvent && selectedEvent.nearby_ranked)
+            ? selectedEvent.nearby_ranked
+            : [];
+        const filteredRows = getFilteredEventForecasts(host, selectedEvent);
+
+        if (tableCount) {
+            tableCount.textContent = `Showing ${formatNumber(filteredRows.length)} nearby facilities`;
+        }
+        if (tableDescription) {
+            const radiusLabel = formatDistanceKm(selectedEvent && selectedEvent.nearby_radius_km);
+            tableDescription.textContent = `Every row below shows a tracked facility within roughly ${radiusLabel} km of the venue.`;
+        }
+        if (tableBody) {
+            if (nearbyRows.length === 0) {
+                tableBody.innerHTML = renderEventsDistanceEmptyState(selectedEvent && selectedEvent.nearby_radius_km);
+                return;
+            }
+
+            tableBody.innerHTML = filteredRows.length === 0
+                ? '<tr><td colspan="8" class="empty-state">No nearby facilities match the current filters.</td></tr>'
+                : renderEventsTableRows(filteredRows);
+        }
+    };
+    const bindEventsForecastControls = (host) => {
+        if (!host || host.dataset.eventsForecastControlsBound === 'true') {
+            return;
+        }
+
+        const controls = [
+            host.querySelector('[data-events-forecast-search]'),
+            host.querySelector('[data-events-forecast-status]'),
+            host.querySelector('[data-events-forecast-sort]')
+        ].filter(Boolean);
+
+        if (controls.length === 0) {
+            return;
+        }
+
+        controls.forEach((control) => {
+            const eventName = control.matches('input') ? 'input' : 'change';
+            control.addEventListener(eventName, () => {
+                const selectedEvent = window.eventsState && window.eventsState.selected_event
+                    ? window.eventsState.selected_event
+                    : null;
+                renderEventsForecastTable(host, selectedEvent);
+            });
+        });
+
+        host.dataset.eventsForecastControlsBound = 'true';
+    };
     const renderEventsData = (host, payload) => {
         if (!host || !payload || typeof payload !== 'object') {
             return;
         }
 
-        const events = Array.isArray(payload.events) ? payload.events : [];
-        const selectedEvent = payload.selected_event && typeof payload.selected_event === 'object'
-            ? payload.selected_event
+        const normalizedPayload = normalizeEventsPayload(payload);
+        const events = normalizedPayload.events;
+        const selectedEvent = normalizedPayload.selected_event && typeof normalizedPayload.selected_event === 'object'
+            ? normalizedPayload.selected_event
             : null;
         const hasEvents = events.length > 0;
         const fields = {
@@ -695,33 +893,37 @@ document.addEventListener('DOMContentLoaded', () => {
             noteCopy: host.querySelector('[data-events-note-copy]'),
             empty: host.querySelector('[data-events-empty]'),
             content: host.querySelector('[data-events-content]'),
+            selectedTitle: host.querySelector('[data-events-selected-title]'),
             trackedCount: host.querySelector('[data-events-tracked-count]'),
             spillover: host.querySelector('[data-events-spillover]'),
             pressureCount: host.querySelector('[data-events-pressure-count]'),
             pressureCopy: host.querySelector('[data-events-pressure-copy]'),
+            featuredAvailable: host.querySelector('[data-events-featured-available]'),
             cards: host.querySelector('[data-events-cards]'),
             selectedPanel: host.querySelector('[data-events-selected-panel]'),
             featuredPanel: host.querySelector('[data-events-featured-panel]'),
-            tableBody: host.querySelector('[data-events-table-body]'),
-            searchInput: host.querySelector('[data-facility-search]')
+            tableBody: host.querySelector('[data-events-table-body]')
         };
         const fullCount = Number(selectedEvent && selectedEvent.status_counts ? selectedEvent.status_counts.full : 0) || 0;
         const limitedCount = Number(selectedEvent && selectedEvent.status_counts ? selectedEvent.status_counts.limited : 0) || 0;
 
         if (fields.window) {
-            fields.window.textContent = `Forecast window: ${payload.window_label || 'N/A'}`;
+            fields.window.textContent = `Forecast window: ${normalizedPayload.window_label || 'N/A'}`;
         }
         if (fields.note) {
-            fields.note.hidden = !payload.note;
+            fields.note.hidden = !normalizedPayload.note;
         }
         if (fields.noteCopy) {
-            fields.noteCopy.textContent = payload.note || '';
+            fields.noteCopy.textContent = normalizedPayload.note || '';
         }
         if (fields.empty) {
             fields.empty.hidden = hasEvents;
         }
         if (fields.content) {
             fields.content.hidden = !hasEvents;
+        }
+        if (fields.selectedTitle) {
+            fields.selectedTitle.textContent = selectedEvent ? (selectedEvent.title || 'None') : 'None';
         }
         if (fields.trackedCount) {
             fields.trackedCount.textContent = formatNumber(events.length);
@@ -735,24 +937,30 @@ document.addEventListener('DOMContentLoaded', () => {
         if (fields.pressureCopy) {
             fields.pressureCopy.textContent = `${formatNumber(fullCount)} full and ${formatNumber(limitedCount)} limited sites are projected under the selected event.`;
         }
+        if (fields.featuredAvailable) {
+            const available = selectedEvent && selectedEvent.featured_forecast
+                ? selectedEvent.featured_forecast.predicted_available
+                : 0;
+            fields.featuredAvailable.textContent = formatNumber(available);
+        }
         if (fields.cards) {
-            fields.cards.innerHTML = renderEventCards(events, payload.selected_event_id || '');
+            fields.cards.innerHTML = renderEventCards(events, normalizedPayload.selected_event_id || '');
         }
         if (fields.selectedPanel) {
             fields.selectedPanel.innerHTML = renderSelectedEventPanel(selectedEvent);
         }
         if (fields.featuredPanel) {
-            fields.featuredPanel.innerHTML = renderFeaturedForecastPanel(selectedEvent, payload.featured_title || 'Featured Facility');
+            fields.featuredPanel.innerHTML = renderFeaturedForecastPanel(selectedEvent, normalizedPayload.featured_title || 'Featured Facility');
         }
         if (fields.tableBody) {
-            fields.tableBody.innerHTML = renderEventsTableRows(selectedEvent);
+            renderEventsForecastTable(host, selectedEvent);
         }
         updateChartData(
             window.eventsCharts && window.eventsCharts.impact,
-            Array.isArray(payload.top_impact_labels) ? payload.top_impact_labels : [],
-            Array.isArray(payload.top_impact_values) ? payload.top_impact_values : []
+            Array.isArray(normalizedPayload.top_impact_labels) ? normalizedPayload.top_impact_labels : [],
+            Array.isArray(normalizedPayload.top_impact_values) ? normalizedPayload.top_impact_values : []
         );
-        applyTableSearch(fields.searchInput);
+        syncEventsSelectionState(host, normalizedPayload);
     };
 
     const initCollectorSync = ({
@@ -786,7 +994,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const fetchViewData = async () => {
             try {
-                const response = await fetch(viewUrl, {
+                const targetViewUrl = typeof viewUrl === 'function'
+                    ? viewUrl()
+                    : viewUrl;
+                if (!targetViewUrl) {
+                    return false;
+                }
+
+                const response = await fetch(targetViewUrl, {
                     method: 'GET',
                     headers: {
                         Accept: 'application/json',
@@ -960,12 +1175,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (liveCollectorHost.hasAttribute('data-live-events-url')) {
+        bindEventsForecastControls(liveCollectorHost);
         initCollectorSync({
             host: liveCollectorHost,
-            viewUrl: liveCollectorHost.getAttribute('data-live-events-url') || '',
+            viewUrl: () => buildEventsSummaryUrl(
+                liveCollectorHost,
+                String((window.eventsState && window.eventsState.selected_event_id) || liveCollectorHost.getAttribute('data-live-events-selected') || '')
+            ),
             initialState: window.eventsState,
             renderPayload: renderEventsData,
-            pageLabel: 'Events page',
+            pageLabel: liveCollectorHost.getAttribute('data-live-events-page-label') || 'Events page',
             updatedMessage: 'Live sync completed. Events forecasts updated in place.',
             checkedMessage: 'Live sync is current. Events forecasts stay updated without a page refresh.',
             busyMessage: 'Live sync is already running elsewhere. Showing the newest event forecasts.',

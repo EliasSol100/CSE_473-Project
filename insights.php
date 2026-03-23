@@ -81,7 +81,6 @@ require_once __DIR__ . '/includes/header.php';
         </article>
     </section>
 
-    <section class="notice"><h3>How to read this page</h3><p class="muted">Use these metrics as decision support: utilization trends identify demand pressure, while model scores indicate how reliably the current feature set predicts occupancy behavior.</p></section>
 </div>
 <script>
 window.insightsState = <?= json_encode($insightsPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
