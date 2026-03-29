@@ -17,3 +17,6 @@ Thumbs.db
 
 # Optional local config
 includes/config.local.php
+
+# Generated event cache
+data/events_live_cache.json

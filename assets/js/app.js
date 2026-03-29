@@ -311,21 +311,80 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }).join('');
     };
+    const getSelectedFacilityFilterValue = (host) => String(
+        host?.querySelector('[data-facilities-facility-filter]')?.value
+        || host?.getAttribute('data-live-facilities-selected')
+        || ''
+    ).trim();
+    const buildFacilitiesPageUrl = (selectedFacilityId = '') => {
+        const nextUrl = new URL(window.location.href);
+        const facilityId = String(selectedFacilityId || '').trim();
+
+        if (facilityId) {
+            nextUrl.searchParams.set('facility_id', facilityId);
+        } else {
+            nextUrl.searchParams.delete('facility_id');
+        }
+
+        return nextUrl;
+    };
+    const buildFacilitiesSummaryUrl = (host, selectedFacilityId = '') => {
+        const baseUrl = host && host.getAttribute('data-live-facilities-url')
+            ? host.getAttribute('data-live-facilities-url')
+            : 'api/facilities_summary.php';
+        const nextUrl = new URL(baseUrl, window.location.href);
+        const facilityId = String(selectedFacilityId || getSelectedFacilityFilterValue(host) || '').trim();
+
+        if (facilityId) {
+            nextUrl.searchParams.set('facility_id', facilityId);
+        } else {
+            nextUrl.searchParams.delete('facility_id');
+        }
+
+        return nextUrl.toString();
+    };
+    const syncFacilitiesSelectionState = (host, payload) => {
+        const selectedFacilityId = String(payload && payload.selected_facility_id ? payload.selected_facility_id : '').trim();
+        const select = host?.querySelector('[data-facilities-facility-filter]');
+        const nextState = payload && typeof payload === 'object'
+            ? { ...payload, selected_facility_id: selectedFacilityId }
+            : { selected_facility_id: selectedFacilityId };
+
+        if (host) {
+            host.setAttribute('data-live-facilities-selected', selectedFacilityId);
+        }
+        if (select && select.value !== selectedFacilityId) {
+            select.value = selectedFacilityId;
+        }
+
+        window.facilitiesState = nextState;
+
+        if (window.history && typeof window.history.replaceState === 'function') {
+            window.history.replaceState(
+                window.history.state,
+                document.title,
+                buildFacilitiesPageUrl(selectedFacilityId).toString()
+            );
+        }
+    };
     const getFilteredFacilities = (host, facilitiesPayload) => {
         const facilities = Array.isArray(facilitiesPayload && facilitiesPayload.facilities)
             ? facilitiesPayload.facilities.slice()
             : [];
+        const selectedFacilityId = getSelectedFacilityFilterValue(host);
         const searchTerm = (host.querySelector('[data-facilities-search]')?.value || '').trim().toLowerCase();
         const statusFilter = host.querySelector('[data-facilities-status-filter]')?.value || 'all';
         const sortFilter = host.querySelector('[data-facilities-sort-filter]')?.value || 'occupancy_desc';
 
         const filtered = facilities.filter((row) => {
+            const matchesFacility = selectedFacilityId === ''
+                || String(row.facility_id ?? '').trim() === selectedFacilityId;
             const haystack = `${String(row.facility_id ?? '').toLowerCase()} ${String(row.facility_name ?? '').toLowerCase()} ${String(row.availability_class ?? '').toLowerCase()}`;
             const matchesSearch = searchTerm === '' || haystack.includes(searchTerm);
             const matchesStatus = statusFilter === 'all'
                 || String(row.availability_class ?? '').trim().toLowerCase() === statusFilter;
 
-            return matchesSearch && matchesStatus;
+            return matchesFacility && matchesSearch && matchesStatus;
         });
 
         filtered.sort((left, right) => {
@@ -426,15 +485,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        window.facilitiesState = payload;
+        const selectedFacilityId = String(payload.selected_facility_id || getSelectedFacilityFilterValue(host) || '').trim();
+        const nextPayload = {
+            ...payload,
+            selected_facility_id: selectedFacilityId
+        };
 
         const latestRefresh = host.querySelector('[data-facilities-latest-refresh]');
         const resultCount = host.querySelector('[data-facilities-result-count]');
         const tableBody = host.querySelector('[data-facilities-table-body]');
-        const filteredFacilities = getFilteredFacilities(host, payload);
+        const filteredFacilities = getFilteredFacilities(host, nextPayload);
 
         if (latestRefresh) {
-            latestRefresh.textContent = `Latest network refresh: ${formatUtcDateTime(payload.summary && payload.summary.last_refresh)}`;
+            latestRefresh.textContent = `Latest network refresh: ${formatUtcDateTime(nextPayload.summary && nextPayload.summary.last_refresh)}`;
         }
         if (resultCount) {
             resultCount.textContent = `Showing ${formatNumber(filteredFacilities.length)} facilities`;
@@ -443,7 +506,8 @@ document.addEventListener('DOMContentLoaded', () => {
             tableBody.innerHTML = renderFacilitiesTableRows(filteredFacilities);
         }
 
-        renderFacilitiesSelectedShell(host, payload);
+        renderFacilitiesSelectedShell(host, nextPayload);
+        syncFacilitiesSelectionState(host, nextPayload);
     };
     const bindFacilitiesControls = (host) => {
         if (!host || host.dataset.facilitiesControlsBound === 'true') {
@@ -455,6 +519,9 @@ document.addEventListener('DOMContentLoaded', () => {
             host.querySelector('[data-facilities-status-filter]'),
             host.querySelector('[data-facilities-sort-filter]')
         ].filter(Boolean);
+        const facilitySelect = host.querySelector('[data-facilities-facility-filter]');
+        const facilityForm = host.querySelector('[data-facilities-selection-form]');
+        let selectionRequestToken = 0;
 
         controls.forEach((control) => {
             const eventName = control.matches('input') ? 'input' : 'change';
@@ -462,6 +529,61 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderFacilitiesData(host, window.facilitiesState || {});
             });
         });
+
+        if (facilityForm) {
+            facilityForm.addEventListener('submit', (event) => {
+                event.preventDefault();
+            });
+        }
+
+        if (facilitySelect) {
+            facilitySelect.addEventListener('change', async () => {
+                const selectedFacilityId = String(facilitySelect.value || '').trim();
+                const requestToken = selectionRequestToken + 1;
+                selectionRequestToken = requestToken;
+
+                renderFacilitiesData(host, {
+                    ...(window.facilitiesState || {}),
+                    selected_facility_id: selectedFacilityId,
+                    selected_summary: selectedFacilityId === '' ? null : (
+                        window.facilitiesState?.selected_facility_id === selectedFacilityId
+                            ? window.facilitiesState?.selected_summary ?? null
+                            : null
+                    ),
+                    history_labels: selectedFacilityId === '' ? [] : (
+                        window.facilitiesState?.selected_facility_id === selectedFacilityId
+                            ? window.facilitiesState?.history_labels ?? []
+                            : []
+                    ),
+                    history_values: selectedFacilityId === '' ? [] : (
+                        window.facilitiesState?.selected_facility_id === selectedFacilityId
+                            ? window.facilitiesState?.history_values ?? []
+                            : []
+                    )
+                });
+
+                try {
+                    const response = await fetch(buildFacilitiesSummaryUrl(host, selectedFacilityId), {
+                        method: 'GET',
+                        headers: {
+                            Accept: 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        cache: 'no-store',
+                        credentials: 'same-origin'
+                    });
+                    const payload = await response.json().catch(() => null);
+
+                    if (!response.ok || !payload || requestToken !== selectionRequestToken) {
+                        return;
+                    }
+
+                    renderFacilitiesData(host, payload);
+                } catch (error) {
+                    console.error('Facilities selection refresh failed:', error);
+                }
+            });
+        }
 
         host.dataset.facilitiesControlsBound = 'true';
     };
@@ -589,13 +711,19 @@ document.addEventListener('DOMContentLoaded', () => {
             ? 'Bella Vista Example'
             : 'Featured Facility';
     };
-    const buildEventsPageUrl = (selectedEventId) => {
+    const buildEventsPageUrl = (selectedEventId, selectedCategory = '') => {
         const nextUrl = new URL(window.location.href);
 
         if (selectedEventId) {
             nextUrl.searchParams.set('event', selectedEventId);
         } else {
             nextUrl.searchParams.delete('event');
+        }
+
+        if (selectedCategory && selectedCategory !== 'all') {
+            nextUrl.searchParams.set('category', selectedCategory);
+        } else {
+            nextUrl.searchParams.delete('category');
         }
 
         return nextUrl;
@@ -623,6 +751,30 @@ document.addEventListener('DOMContentLoaded', () => {
     const normalizeEventsPayload = (payload, selectedEventId = '') => {
         const source = payload && typeof payload === 'object' ? payload : {};
         const events = Array.isArray(source.events) ? source.events : [];
+        const categoryOptions = Array.isArray(source.category_options) && source.category_options.length
+            ? source.category_options
+            : Array.from(events.reduce((map, event) => {
+                const slugs = Array.isArray(event.category_slugs) && event.category_slugs.length
+                    ? event.category_slugs
+                    : [String(event.category_slug || '')];
+                const labels = Array.isArray(event.category_labels) && event.category_labels.length
+                    ? event.category_labels
+                    : [String(event.category_label || 'Event')];
+
+                slugs.forEach((slug, index) => {
+                    const normalizedSlug = String(slug || '').trim();
+                    if (!normalizedSlug || map.has(normalizedSlug)) {
+                        return;
+                    }
+
+                    map.set(normalizedSlug, {
+                        slug: normalizedSlug,
+                        label: String(labels[index] || event.category_label || normalizedSlug).trim() || normalizedSlug
+                    });
+                });
+
+                return map;
+            }, new Map()).values()).sort((left, right) => String(left.label || '').localeCompare(String(right.label || '')));
         const preferredEventId = String(selectedEventId || source.selected_event_id || '');
         const selectedEvent = events.find((event) => String(event.id ?? '') === preferredEventId) || events[0] || null;
         const topImpact = selectedEvent && Array.isArray(selectedEvent.top_impact)
@@ -632,6 +784,104 @@ document.addEventListener('DOMContentLoaded', () => {
         return {
             ...source,
             events,
+            category_options: categoryOptions,
+            selected_category: String(source.selected_category || 'all').trim().toLowerCase() || 'all',
+            selected_event_id: selectedEvent ? String(selectedEvent.id ?? '') : '',
+            selected_event: selectedEvent,
+            featured_title: eventsFeaturedTitle(selectedEvent),
+            top_impact_labels: topImpact.map((row) => row.facility_name ?? ''),
+            top_impact_values: topImpact.map((row) => Math.round((Number(row.predicted_rate) || 0) * 1000) / 10)
+        };
+    };
+    const getEventCategoryFilterValue = (host) => String(host?.querySelector('[data-events-category-filter]')?.value || 'all').trim().toLowerCase();
+    const eventMatchesCategory = (event, categorySlug) => {
+        if (!event || categorySlug === 'all') {
+            return true;
+        }
+
+        const availableSlugs = Array.isArray(event.category_slugs) && event.category_slugs.length
+            ? event.category_slugs
+            : [event.category_slug];
+
+        return availableSlugs
+            .map((slug) => String(slug || '').trim().toLowerCase())
+            .includes(String(categorySlug || '').trim().toLowerCase());
+    };
+    const resolveEventActiveCategory = (event, categorySlug) => {
+        const primarySlug = String(event?.category_slug || 'event').trim() || 'event';
+        const primaryLabel = String(event?.category_label || 'Event').trim() || 'Event';
+
+        if (!event || categorySlug === 'all') {
+            return {
+                active_category_slug: primarySlug,
+                active_category_label: primaryLabel
+            };
+        }
+
+        const availableSlugs = Array.isArray(event.category_slugs) && event.category_slugs.length
+            ? event.category_slugs
+            : [primarySlug];
+        const availableLabels = Array.isArray(event.category_labels) && event.category_labels.length
+            ? event.category_labels
+            : [primaryLabel];
+        const normalizedTarget = String(categorySlug || '').trim().toLowerCase();
+
+        for (let index = 0; index < availableSlugs.length; index += 1) {
+            const slug = String(availableSlugs[index] || '').trim();
+            if (slug.toLowerCase() === normalizedTarget) {
+                return {
+                    active_category_slug: slug || primarySlug,
+                    active_category_label: String(availableLabels[index] || primaryLabel).trim() || primaryLabel
+                };
+            }
+        }
+
+        return {
+            active_category_slug: primarySlug,
+            active_category_label: primaryLabel
+        };
+    };
+    const renderEventsCategoryOptions = (host, options) => {
+        const select = host?.querySelector('[data-events-category-filter]');
+        if (!select) {
+            return;
+        }
+
+        const fallbackValue = String(host?.getAttribute('data-live-events-category') || 'all');
+        const previousValue = String(select.value || fallbackValue || 'all');
+        const normalizedOptions = Array.isArray(options) ? options : [];
+
+        select.innerHTML = `
+            <option value="all">All event types</option>
+            ${normalizedOptions.map((option) => `
+                <option value="${escapeHtml(option.slug ?? '')}">${escapeHtml(option.label ?? option.slug ?? '')}</option>
+            `).join('')}
+        `;
+
+        select.value = normalizedOptions.some((option) => String(option.slug ?? '') === previousValue)
+            ? previousValue
+            : 'all';
+    };
+    const buildEventsDisplayState = (host, payload) => {
+        const categoryFilter = getEventCategoryFilterValue(host);
+        const visibleEvents = Array.isArray(payload.events)
+            ? payload.events
+                .filter((event) => eventMatchesCategory(event, categoryFilter))
+                .map((event) => ({
+                    ...event,
+                    ...resolveEventActiveCategory(event, categoryFilter)
+                }))
+            : [];
+        const selectedEventId = String(payload.selected_event_id || '');
+        const selectedEvent = visibleEvents.find((event) => String(event.id ?? '') === selectedEventId) || visibleEvents[0] || null;
+        const topImpact = selectedEvent && Array.isArray(selectedEvent.top_impact)
+            ? selectedEvent.top_impact
+            : [];
+
+        return {
+            ...payload,
+            selected_category: categoryFilter,
+            visible_events: visibleEvents,
             selected_event_id: selectedEvent ? String(selectedEvent.id ?? '') : '',
             selected_event: selectedEvent,
             featured_title: eventsFeaturedTitle(selectedEvent),
@@ -644,17 +894,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (host) {
             host.setAttribute('data-live-events-selected', selectedEventId);
+            host.setAttribute('data-live-events-category', String(payload && payload.selected_category ? payload.selected_category : 'all'));
         }
 
         window.eventsState = payload;
 
         if (window.history && typeof window.history.replaceState === 'function') {
-            window.history.replaceState(window.history.state, document.title, buildEventsPageUrl(selectedEventId).toString());
+            window.history.replaceState(
+                window.history.state,
+                document.title,
+                buildEventsPageUrl(selectedEventId, String(payload && payload.selected_category ? payload.selected_category : 'all')).toString()
+            );
         }
     };
     const renderEventCards = (events, selectedEventId) => {
         if (!Array.isArray(events) || events.length === 0) {
-            return '';
+            return '<div class="empty-state card" style="grid-column: 1 / -1;">No events match the selected event type right now.</div>';
         }
 
         return events.map((event) => {
@@ -662,6 +917,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const isActive = eventId === String(selectedEventId || '');
             const activeClass = isActive ? ' active' : '';
             const title = event.title ?? '';
+            const categoryLabel = event.active_category_label || event.category_label || 'Event';
             const attendanceLabel = event.attendance_label ?? 'Estimated attendance';
             const attendanceEstimate = formatNumber(event.attendance_estimate);
             const startsAtTag = escapeHtml(String(event.starts_at_display ?? '').split(' ').slice(0, 4).join(' '));
@@ -673,6 +929,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <article class="panel event-selector${activeClass}" data-event-id="${escapeHtml(eventId)}">
                     <div class="tag-row" style="margin-top:0;">
                         <span class="tag">${startsAtTag}</span>
+                        <span class="tag tag-category">${escapeHtml(categoryLabel)}</span>
                         <span class="tag">${escapeHtml(attendanceLabel)}: ${escapeHtml(attendanceEstimate)}</span>
                     </div>
                     <h3>${escapeHtml(title)}</h3>
@@ -698,6 +955,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <h3>${escapeHtml(selectedEvent.title ?? '')}</h3>
             <p class="muted">${escapeHtml(selectedEvent.starts_at_display ?? '')} to ${escapeHtml(selectedEvent.ends_at_display ?? '')}</p>
             <div class="stat-list" style="margin-top:18px;">
+                <div class="stat-item"><span>Event type</span><strong>${escapeHtml(selectedEvent.active_category_label || selectedEvent.category_label || 'Event')}</strong></div>
                 <div class="stat-item"><span>Venue</span><strong>${escapeHtml(selectedEvent.venue_name ?? '')}, ${escapeHtml(selectedEvent.venue_area ?? '')}</strong></div>
                 <div class="stat-item"><span>Address</span><strong>${escapeHtml(selectedEvent.venue_address ?? '')}</strong></div>
                 <div class="stat-item"><span>${escapeHtml(selectedEvent.attendance_label ?? 'Estimated attendance')}</span><strong>${escapeHtml(formatNumber(selectedEvent.attendance_estimate))}</strong></div>
@@ -876,17 +1134,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
         host.dataset.eventsForecastControlsBound = 'true';
     };
+    const bindEventsCategoryControl = (host) => {
+        if (!host || host.dataset.eventsCategoryControlBound === 'true') {
+            return;
+        }
+
+        const select = host.querySelector('[data-events-category-filter]');
+        const form = host.querySelector('[data-events-category-form]');
+        if (!select) {
+            return;
+        }
+
+        if (form) {
+            form.addEventListener('submit', (event) => {
+                event.preventDefault();
+                host.setAttribute('data-live-events-category', String(select.value || 'all'));
+                renderEventsData(host, window.eventsState || {});
+            });
+        }
+
+        select.addEventListener('change', () => {
+            host.setAttribute('data-live-events-category', String(select.value || 'all'));
+            renderEventsData(host, window.eventsState || {});
+        });
+
+        host.dataset.eventsCategoryControlBound = 'true';
+    };
     const renderEventsData = (host, payload) => {
         if (!host || !payload || typeof payload !== 'object') {
             return;
         }
 
-        const normalizedPayload = normalizeEventsPayload(payload);
-        const events = normalizedPayload.events;
-        const selectedEvent = normalizedPayload.selected_event && typeof normalizedPayload.selected_event === 'object'
-            ? normalizedPayload.selected_event
+        const normalizedPayload = normalizeEventsPayload(
+            payload,
+            host.getAttribute('data-live-events-selected') || ''
+        );
+        renderEventsCategoryOptions(host, normalizedPayload.category_options);
+
+        const displayState = buildEventsDisplayState(host, normalizedPayload);
+        const events = displayState.visible_events;
+        const selectedEvent = displayState.selected_event && typeof displayState.selected_event === 'object'
+            ? displayState.selected_event
             : null;
-        const hasEvents = events.length > 0;
+        const hasEvents = normalizedPayload.events.length > 0;
         const fields = {
             window: host.querySelector('[data-events-window]'),
             note: host.querySelector('[data-events-note]'),
@@ -894,11 +1184,13 @@ document.addEventListener('DOMContentLoaded', () => {
             empty: host.querySelector('[data-events-empty]'),
             content: host.querySelector('[data-events-content]'),
             selectedTitle: host.querySelector('[data-events-selected-title]'),
+            selectedCategory: host.querySelector('[data-events-selected-category]'),
             trackedCount: host.querySelector('[data-events-tracked-count]'),
             spillover: host.querySelector('[data-events-spillover]'),
             pressureCount: host.querySelector('[data-events-pressure-count]'),
             pressureCopy: host.querySelector('[data-events-pressure-copy]'),
             featuredAvailable: host.querySelector('[data-events-featured-available]'),
+            cardCount: host.querySelector('[data-events-card-count]'),
             cards: host.querySelector('[data-events-cards]'),
             selectedPanel: host.querySelector('[data-events-selected-panel]'),
             featuredPanel: host.querySelector('[data-events-featured-panel]'),
@@ -925,6 +1217,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (fields.selectedTitle) {
             fields.selectedTitle.textContent = selectedEvent ? (selectedEvent.title || 'None') : 'None';
         }
+        if (fields.selectedCategory) {
+            fields.selectedCategory.textContent = selectedEvent ? (selectedEvent.active_category_label || selectedEvent.category_label || 'Event') : 'None';
+        }
         if (fields.trackedCount) {
             fields.trackedCount.textContent = formatNumber(events.length);
         }
@@ -943,24 +1238,44 @@ document.addEventListener('DOMContentLoaded', () => {
                 : 0;
             fields.featuredAvailable.textContent = formatNumber(available);
         }
+        if (fields.cardCount) {
+            fields.cardCount.textContent = `Showing ${formatNumber(events.length)} event${events.length === 1 ? '' : 's'}`;
+        }
         if (fields.cards) {
-            fields.cards.innerHTML = renderEventCards(events, normalizedPayload.selected_event_id || '');
+            fields.cards.innerHTML = renderEventCards(events, displayState.selected_event_id || '');
         }
         if (fields.selectedPanel) {
             fields.selectedPanel.innerHTML = renderSelectedEventPanel(selectedEvent);
         }
         if (fields.featuredPanel) {
-            fields.featuredPanel.innerHTML = renderFeaturedForecastPanel(selectedEvent, normalizedPayload.featured_title || 'Featured Facility');
+            fields.featuredPanel.innerHTML = renderFeaturedForecastPanel(selectedEvent, displayState.featured_title || 'Featured Facility');
         }
         if (fields.tableBody) {
             renderEventsForecastTable(host, selectedEvent);
         }
         updateChartData(
             window.eventsCharts && window.eventsCharts.impact,
-            Array.isArray(normalizedPayload.top_impact_labels) ? normalizedPayload.top_impact_labels : [],
-            Array.isArray(normalizedPayload.top_impact_values) ? normalizedPayload.top_impact_values : []
+            Array.isArray(displayState.top_impact_labels) ? displayState.top_impact_labels : [],
+            Array.isArray(displayState.top_impact_values) ? displayState.top_impact_values : []
         );
-        syncEventsSelectionState(host, normalizedPayload);
+        bindEventsCategoryControl(host);
+        syncEventsSelectionState(
+            host,
+            normalizedPayload.events.length > 0
+                ? {
+                    ...normalizedPayload,
+                    selected_category: displayState.selected_category || getEventCategoryFilterValue(host),
+                    selected_event_id: displayState.selected_event_id,
+                    selected_event: displayState.selected_event,
+                    featured_title: displayState.featured_title,
+                    top_impact_labels: Array.isArray(displayState.top_impact_labels) ? displayState.top_impact_labels : [],
+                    top_impact_values: Array.isArray(displayState.top_impact_values) ? displayState.top_impact_values : []
+                }
+                : {
+                    ...normalizedPayload,
+                    selected_category: getEventCategoryFilterValue(host)
+                }
+        );
     };
 
     const initCollectorSync = ({
@@ -969,6 +1284,7 @@ document.addEventListener('DOMContentLoaded', () => {
         initialState,
         renderPayload,
         pageLabel,
+        checkingMessage,
         updatedMessage,
         checkedMessage,
         busyMessage,
@@ -1030,7 +1346,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             collectorInFlight = true;
-            setCollectorStatus('Checking live parking feed...');
+            setCollectorStatus(checkingMessage || 'Checking live data...');
 
             try {
                 const response = await fetch(collectorUrl, {
@@ -1105,6 +1421,7 @@ document.addEventListener('DOMContentLoaded', () => {
             initialState: window.homeState,
             renderPayload: renderHomeData,
             pageLabel: 'Home page',
+            checkingMessage: 'Checking live network summary...',
             updatedMessage: 'Live sync completed. Home highlights updated in place.',
             checkedMessage: 'Live sync is current. Home highlights stay updated without a page refresh.',
             busyMessage: 'Live sync is already running elsewhere. Showing the newest home summary.',
@@ -1120,6 +1437,7 @@ document.addEventListener('DOMContentLoaded', () => {
             initialState: window.dashboardState,
             renderPayload: renderDashboardData,
             pageLabel: 'dashboard',
+            checkingMessage: 'Checking live occupancy summary...',
             updatedMessage: 'Live sync completed. Dashboard updated in place.',
             checkedMessage: 'Live sync is current. Dashboard stays updated without a page refresh.',
             busyMessage: 'Live sync is already running elsewhere. Showing the newest stored data.',
@@ -1132,10 +1450,11 @@ document.addEventListener('DOMContentLoaded', () => {
         bindFacilitiesControls(liveCollectorHost);
         initCollectorSync({
             host: liveCollectorHost,
-            viewUrl: liveCollectorHost.getAttribute('data-live-facilities-url') || '',
+            viewUrl: () => buildFacilitiesSummaryUrl(liveCollectorHost),
             initialState: window.facilitiesState,
             renderPayload: renderFacilitiesData,
             pageLabel: 'Facilities page',
+            checkingMessage: 'Checking live facility statuses...',
             updatedMessage: 'Live sync completed. Facilities updated in place.',
             checkedMessage: 'Live sync is current. Facilities stay updated without a page refresh.',
             busyMessage: 'Live sync is already running elsewhere. Showing the newest facility status.',
@@ -1151,6 +1470,7 @@ document.addEventListener('DOMContentLoaded', () => {
             initialState: window.insightsState,
             renderPayload: renderInsightsData,
             pageLabel: 'Insights page',
+            checkingMessage: 'Checking live analytics snapshot...',
             updatedMessage: 'Live sync completed. Insights updated in place.',
             checkedMessage: 'Live sync is current. Insights stay updated without a page refresh.',
             busyMessage: 'Live sync is already running elsewhere. Showing the newest insight summary.',
@@ -1166,6 +1486,7 @@ document.addEventListener('DOMContentLoaded', () => {
             initialState: window.aboutState,
             renderPayload: renderAboutData,
             pageLabel: 'About page',
+            checkingMessage: 'Checking live platform coverage...',
             updatedMessage: 'Live sync completed. About coverage stats updated in place.',
             checkedMessage: 'Live sync is current. About coverage stays updated without a page refresh.',
             busyMessage: 'Live sync is already running elsewhere. Showing the newest platform coverage.',
@@ -1185,6 +1506,9 @@ document.addEventListener('DOMContentLoaded', () => {
             initialState: window.eventsState,
             renderPayload: renderEventsData,
             pageLabel: liveCollectorHost.getAttribute('data-live-events-page-label') || 'Events page',
+            checkingMessage: String(liveCollectorHost.getAttribute('data-live-events-page-type') || '').trim().toLowerCase() === 'forecast'
+                ? 'Checking live event forecasts...'
+                : 'Checking live Sydney event feed...',
             updatedMessage: 'Live sync completed. Events forecasts updated in place.',
             checkedMessage: 'Live sync is current. Events forecasts stay updated without a page refresh.',
             busyMessage: 'Live sync is already running elsewhere. Showing the newest event forecasts.',

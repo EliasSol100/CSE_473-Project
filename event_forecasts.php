@@ -13,10 +13,12 @@ try {
 $collectorIntervalSeconds = max(1, (int) round($collectorIntervalMs / 1000));
 
 $requestedEventId = isset($_GET['event']) ? trim((string) $_GET['event']) : null;
-$eventsPayload = events_view_payload($requestedEventId);
+$requestedCategory = isset($_GET['category']) ? trim((string) $_GET['category']) : 'all';
+$eventsPayload = events_view_payload($requestedEventId, $requestedCategory);
 $events = $eventsPayload['events'];
 $selectedEvent = $eventsPayload['selected_event'];
 $selectedEventId = (string) ($eventsPayload['selected_event_id'] ?? $requestedEventId ?? '');
+$selectedCategory = (string) ($eventsPayload['selected_category'] ?? 'all');
 $featuredForecast = $selectedEvent['featured_forecast'] ?? null;
 $featuredPercent = $featuredForecast ? ((float) $featuredForecast['predicted_rate']) * 100 : 0;
 $topImpactLabels = $eventsPayload['top_impact_labels'];
@@ -27,7 +29,7 @@ $nearbyRadiusLabel = $selectedEvent
     ? rtrim(rtrim(number_format((float) ($selectedEvent['nearby_radius_km'] ?? 0), 1), '0'), '.')
     : '0';
 ?>
-<div class="container" data-live-collector-url="api/collect_live.php" data-live-events-url="<?= h($eventsSyncUrl) ?>" data-live-events-selected="<?= h($selectedEventId) ?>" data-live-events-page-type="forecast" data-live-events-page-label="Event Forecast page" data-live-collector-interval="<?= h((string) $collectorIntervalMs) ?>">
+<div class="container" data-live-collector-url="api/collect_live.php" data-live-events-url="<?= h($eventsSyncUrl) ?>" data-live-events-selected="<?= h($selectedEventId) ?>" data-live-events-category="<?= h($selectedCategory) ?>" data-live-events-page-type="forecast" data-live-events-page-label="Event Forecast page" data-live-collector-interval="<?= h((string) $collectorIntervalMs) ?>">
     <div class="section-title">
         <div>
             <h2>Event forecast</h2>
@@ -44,6 +46,7 @@ $nearbyRadiusLabel = $selectedEvent
         <p class="muted" style="margin-bottom:14px;">Open another researched event forecast below, or return to <a href="events.php">Events</a> for the broader outlook.</p>
         <div class="tag-row" style="margin-top:0;">
             <span class="tag">Selected event: <span data-events-selected-title><?= h($selectedEvent['title'] ?? 'None') ?></span></span>
+            <span class="tag tag-category">Selected type: <span data-events-selected-category><?= h($selectedEvent['active_category_label'] ?? $selectedEvent['category_label'] ?? 'Event') ?></span></span>
             <span class="tag">Tracked events: <span data-events-tracked-count><?= h(format_number(count($events))) ?></span></span>
         </div>
     </section>
@@ -74,12 +77,34 @@ $nearbyRadiusLabel = $selectedEvent
             </article>
         </section>
 
+        <section class="table-card" style="margin-bottom:24px;" data-events-browser>
+            <div class="section-title">
+                <div>
+                    <h3>Browse live event types</h3>
+                    <p>Filter the official Sydney event feed by category before opening a detailed forecast.</p>
+                </div>
+                <p class="muted" style="margin:0;" data-events-card-count>Showing <?= h(format_number(count($events))) ?> events</p>
+            </div>
+            <form class="filters" method="get" data-events-category-form>
+                <?php if ($selectedEventId !== ''): ?>
+                    <input type="hidden" name="event" value="<?= h($selectedEventId) ?>">
+                <?php endif; ?>
+                <select class="select-field" name="category" data-events-category-filter>
+                    <option value="all">All event types</option>
+                    <?php foreach (($eventsPayload['category_options'] ?? []) as $option): ?>
+                        <option value="<?= h($option['slug']) ?>"<?= $selectedCategory === (string) $option['slug'] ? ' selected' : '' ?>><?= h($option['label']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
+        </section>
+
         <section class="grid-two" style="margin-bottom:24px;" data-events-cards>
             <?php foreach ($events as $event): ?>
                 <?php $active = $selectedEvent && $selectedEvent['id'] === $event['id']; ?>
                 <article class="panel event-selector<?= $active ? ' active' : '' ?>" data-event-id="<?= h($event['id']) ?>">
                     <div class="tag-row" style="margin-top:0;">
                         <span class="tag"><?= h(events_parse_datetime($event['starts_at'])->format('D, d M Y')) ?></span>
+                        <span class="tag tag-category"><?= h($event['active_category_label'] ?? $event['category_label'] ?? 'Event') ?></span>
                         <span class="tag"><?= h($event['attendance_label']) ?>: <?= h(format_number($event['attendance_estimate'])) ?></span>
                     </div>
                     <h3><?= h($event['title']) ?></h3>
@@ -103,6 +128,7 @@ $nearbyRadiusLabel = $selectedEvent
                     <h3><?= h($selectedEvent['title']) ?></h3>
                     <p class="muted"><?= h($selectedEvent['starts_at_display']) ?> to <?= h($selectedEvent['ends_at_display']) ?></p>
                     <div class="stat-list" style="margin-top:18px;">
+                        <div class="stat-item"><span>Event type</span><strong><?= h($selectedEvent['active_category_label'] ?? $selectedEvent['category_label'] ?? 'Event') ?></strong></div>
                         <div class="stat-item"><span>Venue</span><strong><?= h($selectedEvent['venue_name']) ?>, <?= h($selectedEvent['venue_area']) ?></strong></div>
                         <div class="stat-item"><span>Address</span><strong><?= h($selectedEvent['venue_address']) ?></strong></div>
                         <div class="stat-item"><span><?= h($selectedEvent['attendance_label']) ?></span><strong><?= h(format_number($selectedEvent['attendance_estimate'])) ?></strong></div>

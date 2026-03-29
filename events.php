@@ -13,14 +13,16 @@ try {
 $collectorIntervalSeconds = max(1, (int) round($collectorIntervalMs / 1000));
 
 $requestedEventId = isset($_GET['event']) ? trim((string) $_GET['event']) : null;
-$eventsPayload = events_view_payload($requestedEventId);
+$requestedCategory = isset($_GET['category']) ? trim((string) $_GET['category']) : 'all';
+$eventsPayload = events_view_payload($requestedEventId, $requestedCategory);
 $events = $eventsPayload['events'];
 $selectedEvent = $eventsPayload['selected_event'];
 $selectedEventId = (string) ($eventsPayload['selected_event_id'] ?? $requestedEventId ?? '');
+$selectedCategory = (string) ($eventsPayload['selected_category'] ?? 'all');
 $hasEvents = $events !== [];
 $eventsSyncUrl = 'api/events_summary.php';
 ?>
-<div class="container" data-live-collector-url="api/collect_live.php" data-live-events-url="<?= h($eventsSyncUrl) ?>" data-live-events-selected="<?= h($selectedEventId) ?>" data-live-events-page-type="overview" data-live-events-page-label="Events page" data-live-collector-interval="<?= h((string) $collectorIntervalMs) ?>">
+<div class="container" data-live-collector-url="api/collect_live.php" data-live-events-url="<?= h($eventsSyncUrl) ?>" data-live-events-selected="<?= h($selectedEventId) ?>" data-live-events-category="<?= h($selectedCategory) ?>" data-live-events-page-type="overview" data-live-events-page-label="Events page" data-live-collector-interval="<?= h((string) $collectorIntervalMs) ?>">
     <div class="section-title">
         <div>
             <h2>Events outlook</h2>
@@ -58,12 +60,34 @@ $eventsSyncUrl = 'api/events_summary.php';
             </article>
         </section>
 
+        <section class="table-card" style="margin-bottom:24px;" data-events-browser>
+            <div class="section-title">
+                <div>
+                    <h3>Browse live event types</h3>
+                    <p>Filter the official Sydney event feed by category, including music, festivals, sport, family events, and more.</p>
+                </div>
+                <p class="muted" style="margin:0;" data-events-card-count>Showing <?= h(format_number(count($events))) ?> events</p>
+            </div>
+            <form class="filters" method="get" data-events-category-form>
+                <?php if ($selectedEventId !== ''): ?>
+                    <input type="hidden" name="event" value="<?= h($selectedEventId) ?>">
+                <?php endif; ?>
+                <select class="select-field" name="category" data-events-category-filter>
+                    <option value="all">All event types</option>
+                    <?php foreach (($eventsPayload['category_options'] ?? []) as $option): ?>
+                        <option value="<?= h($option['slug']) ?>"<?= $selectedCategory === (string) $option['slug'] ? ' selected' : '' ?>><?= h($option['label']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
+        </section>
+
         <section class="grid-two" style="margin-bottom:24px;" data-events-cards>
             <?php foreach ($events as $event): ?>
                 <?php $active = $selectedEvent && $selectedEvent['id'] === $event['id']; ?>
                 <article class="panel event-selector<?= $active ? ' active' : '' ?>" data-event-id="<?= h($event['id']) ?>">
                     <div class="tag-row" style="margin-top:0;">
                         <span class="tag"><?= h(events_parse_datetime($event['starts_at'])->format('D, d M Y')) ?></span>
+                        <span class="tag tag-category"><?= h($event['active_category_label'] ?? $event['category_label'] ?? 'Event') ?></span>
                         <span class="tag"><?= h($event['attendance_label']) ?>: <?= h(format_number($event['attendance_estimate'])) ?></span>
                     </div>
                     <h3><?= h($event['title']) ?></h3>

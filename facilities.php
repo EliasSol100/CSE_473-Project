@@ -13,14 +13,20 @@ $collectorIntervalSeconds = max(1, (int) round($collectorIntervalMs / 1000));
 $selectedFacilityId = isset($_GET['facility_id']) ? trim((string) $_GET['facility_id']) : '';
 $facilitiesPayload = facilities_page_payload($selectedFacilityId);
 $facilities = $facilitiesPayload['facilities'];
+$visibleFacilities = $selectedFacilityId !== ''
+    ? array_values(array_filter(
+        $facilities,
+        static fn(array $row): bool => (string) ($row['facility_id'] ?? '') === $selectedFacilityId
+    ))
+    : $facilities;
 $summary = $facilitiesPayload['summary'];
 $selectedSummary = $facilitiesPayload['selected_summary'];
 $options = facility_options();
-$facilitiesSyncUrl = 'api/facilities_summary.php?facility_id=' . rawurlencode($selectedFacilityId);
+$facilitiesSyncUrl = 'api/facilities_summary.php';
 
 require_once __DIR__ . '/includes/header.php';
 ?>
-<div class="container" data-live-collector-url="api/collect_live.php" data-live-facilities-url="<?= h($facilitiesSyncUrl) ?>" data-live-collector-interval="<?= h((string) $collectorIntervalMs) ?>">
+<div class="container" data-live-collector-url="api/collect_live.php" data-live-facilities-url="<?= h($facilitiesSyncUrl) ?>" data-live-facilities-selected="<?= h($selectedFacilityId) ?>" data-live-collector-interval="<?= h((string) $collectorIntervalMs) ?>">
     <div class="section-title">
         <div>
             <h2>Facility monitoring center</h2>
@@ -45,8 +51,8 @@ require_once __DIR__ . '/includes/header.php';
                 <option value="occupancy_desc">Full to lowest occupancy</option>
                 <option value="occupancy_asc">Lowest occupancy to full</option>
             </select>
-            <form method="get">
-                <select class="select-field" name="facility_id" onchange="this.form.submit()">
+            <form method="get" data-facilities-selection-form>
+                <select class="select-field" name="facility_id" data-facilities-facility-filter>
                     <option value="">Select a facility to view history</option>
                     <?php foreach ($options as $option): ?>
                         <option value="<?= h($option['facility_id']) ?>" <?= $selectedFacilityId === $option['facility_id'] ? 'selected' : '' ?>><?= h($option['facility_name']) ?></option>
@@ -56,14 +62,14 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div class="tag-row" style="margin-bottom:18px;">
-            <span class="tag" data-facilities-result-count>Showing <?= h(format_number(count($facilities))) ?> facilities</span>
+            <span class="tag" data-facilities-result-count>Showing <?= h(format_number(count($visibleFacilities))) ?> facilities</span>
         </div>
 
         <div class="table-wrap">
             <table>
                 <thead><tr><th>Facility ID</th><th>Facility Name</th><th>Capacity</th><th>Occupied</th><th>Available</th><th>Occupancy</th><th>Status</th></tr></thead>
                 <tbody data-facilities-table-body>
-                    <?php foreach ($facilities as $row): ?>
+                    <?php foreach ($visibleFacilities as $row): ?>
                         <?php $percent = (float) $row['occupancy_rate'] * 100; ?>
                         <tr>
                             <td><?= h($row['facility_id']) ?></td>

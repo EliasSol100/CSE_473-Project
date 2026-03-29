@@ -12,6 +12,18 @@ function h(?string $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
+function asset_url(string $path): string
+{
+    $relativePath = ltrim($path, '/\\');
+    $absolutePath = dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $relativePath);
+
+    if (is_file($absolutePath)) {
+        return $relativePath . '?v=' . filemtime($absolutePath);
+    }
+
+    return $relativePath;
+}
+
 function current_page(): string
 {
     return basename($_SERVER['PHP_SELF'] ?? 'index.php');

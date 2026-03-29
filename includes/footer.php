@@ -26,6 +26,6 @@
         <p>&copy; <?= date('Y') ?> Smart Parking NSW. All rights reserved.</p>
     </div>
 </footer>
-<script src="assets/js/app.js"></script>
+<script src="<?= h(asset_url('assets/js/app.js')) ?>"></script>
 </body>
 </html>

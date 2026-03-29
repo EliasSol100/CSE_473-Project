@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/event_live_sources.php';
 
 function events_timezone(): DateTimeZone
 {
@@ -12,136 +13,13 @@ function events_timezone(): DateTimeZone
     return $timezone;
 }
 
-function events_curated_catalog(): array
-{
-    return [
-        [
-            'id' => 'pulse-alive-2026-03-20',
-            'title' => 'Pulse Alive',
-            'starts_at' => '2026-03-20 19:30:00',
-            'ends_at' => '2026-03-20 21:30:00',
-            'venue_name' => 'Ken Rosewall Arena',
-            'venue_area' => 'Sydney Olympic Park',
-            'venue_address' => 'Ken Rosewall Arena, Tennis Centre, Sydney Olympic Park NSW',
-            'venue_lat' => -33.8474,
-            'venue_lng' => 151.0672,
-            'source_label' => 'Sydney Olympic Park',
-            'source_url' => 'https://www.sydneyolympicpark.com.au/things-to-see-and-do/pulse-alive',
-            'source_basis' => 'Official venue listing',
-            'attendance_estimate' => 5200,
-            'attendance_label' => 'Estimated attendance',
-            'attendance_note' => 'Estimated from the official description of a large-scale arena event showcasing thousands of NSW public school performers.',
-            'peak_vehicle_demand' => 210,
-            'demand_note' => 'Higher evening arrivals, but only part of the crowd is expected to spill into monitored park-and-ride facilities.',
-            'distance_decay_km' => 12.5,
-            'max_distance_km' => 58,
-            'display_max_distance_km' => 10,
-            'network_floor' => 0.03,
-            'focus_keywords' => ['seven hills', 'st marys', 'penrith', 'warwick farm', 'west ryde', 'revesby', 'campbelltown', 'edmondson park'],
-            'secondary_keywords' => ['bella vista', 'hills showground', 'cherrybrook', 'tallawong', 'kellyville', 'gosford', 'sutherland'],
-            'featured_facility_id' => '488',
-            'featured_reason' => 'Seven Hills is positioned to absorb westbound rail demand into Sydney Olympic Park for a Friday night arena event.',
-        ],
-        [
-            'id' => 'nsw-opens-2026-03-21',
-            'title' => 'NSW Opens - Hart Sports Track And Field Championships',
-            'starts_at' => '2026-03-21 09:00:00',
-            'ends_at' => '2026-03-21 18:00:00',
-            'venue_name' => 'Sydney Olympic Park Athletic Centre',
-            'venue_area' => 'Sydney Olympic Park',
-            'venue_address' => 'Sydney Olympic Park Athletic Centre, Edwin Flack Ave, Sydney Olympic Park NSW',
-            'venue_lat' => -33.8494,
-            'venue_lng' => 151.0730,
-            'source_label' => 'Sydney Olympic Park Athletic Centre',
-            'source_url' => 'https://www.sydneyolympicpark.com.au/athletic-centre/events',
-            'source_basis' => 'Official venue calendar with crowd forecast',
-            'attendance_estimate' => 2000,
-            'attendance_label' => 'Official crowd forecast',
-            'attendance_note' => 'The venue calendar lists a crowd of 2,000 for the Saturday program.',
-            'peak_vehicle_demand' => 155,
-            'demand_note' => 'Daytime championships spread arrivals across the morning, so the peak spillover into monitored commuter parking is moderate.',
-            'distance_decay_km' => 13,
-            'max_distance_km' => 58,
-            'display_max_distance_km' => 10,
-            'network_floor' => 0.025,
-            'focus_keywords' => ['seven hills', 'st marys', 'penrith', 'warwick farm', 'west ryde', 'revesby', 'campbelltown', 'edmondson park'],
-            'secondary_keywords' => ['bella vista', 'hills showground', 'cherrybrook', 'tallawong', 'kellyville', 'gosford', 'sutherland'],
-            'featured_facility_id' => '22',
-            'featured_reason' => 'Penrith multi-level is one of the stronger western catchment sites for all-day athletic events at Olympic Park.',
-        ],
-        [
-            'id' => 'norwest-quarter-grand-opening-2026-03-22',
-            'title' => 'Norwest Quarter Grand Opening',
-            'starts_at' => '2026-03-22 11:00:00',
-            'ends_at' => '2026-03-22 15:00:00',
-            'venue_name' => 'Norwest Quarter',
-            'venue_area' => 'Norwest / Bella Vista',
-            'venue_address' => '40-42 Solent Circuit, Norwest NSW 2153',
-            'venue_lat' => -33.7324,
-            'venue_lng' => 150.9615,
-            'source_label' => 'Humanitix listing for Norwest Quarter by Mulpha',
-            'source_url' => 'https://events.humanitix.com/nq-grand-opening',
-            'source_basis' => 'Primary event listing',
-            'attendance_estimate' => 1600,
-            'attendance_label' => 'Estimated attendance',
-            'attendance_note' => 'Estimated from a four-hour local launch with family entertainment, food tasting, live music, tours and prizes.',
-            'peak_vehicle_demand' => 340,
-            'demand_note' => 'The event is local, family-oriented and midday-focused, so the forecast assumes strong private-car usage and meaningful spillover into nearby station parking.',
-            'distance_decay_km' => 5.8,
-            'max_distance_km' => 26,
-            'display_max_distance_km' => 10,
-            'network_floor' => 0.01,
-            'focus_keywords' => ['bella vista', 'hills showground', 'cherrybrook', 'kellyville', 'tallawong', 'schofields'],
-            'secondary_keywords' => ['west ryde', 'north rocks', 'gordon', 'narrabeen', 'warriewood'],
-            'featured_facility_id' => '3',
-            'featured_reason' => 'Bella Vista Station Car Park (historical only) is used here as the headline example because it sits in the same broader Norwest / Bella Vista catchment.',
-        ],
-        [
-            'id' => 'ssn-double-header-2026-03-22',
-            'title' => 'SSN Double Header 2026',
-            'starts_at' => '2026-03-22 15:00:00',
-            'ends_at' => '2026-03-22 20:30:00',
-            'venue_name' => 'Qudos Bank Arena',
-            'venue_area' => 'Sydney Olympic Park',
-            'venue_address' => '19 Edwin Flack Ave, Sydney Olympic Park NSW 2127',
-            'venue_lat' => -33.8468,
-            'venue_lng' => 151.0633,
-            'source_label' => 'Qudos Bank Arena',
-            'source_url' => 'https://qudosbankarena.com.au/',
-            'source_basis' => 'Official venue schedule',
-            'attendance_estimate' => 13500,
-            'attendance_label' => 'Estimated attendance',
-            'attendance_note' => 'Estimated from a Sunday Super Netball double-header hosted at the arena, which the venue describes as Australia\'s largest indoor entertainment and sporting arena.',
-            'peak_vehicle_demand' => 290,
-            'demand_note' => 'Most visitors will use major transport corridors, but the event is large enough to create a meaningful Sunday surge across the wider network.',
-            'distance_decay_km' => 14,
-            'max_distance_km' => 60,
-            'display_max_distance_km' => 10,
-            'network_floor' => 0.035,
-            'focus_keywords' => ['seven hills', 'st marys', 'penrith', 'warwick farm', 'west ryde', 'revesby', 'campbelltown', 'edmondson park'],
-            'secondary_keywords' => ['bella vista', 'hills showground', 'cherrybrook', 'tallawong', 'kellyville', 'gosford', 'sutherland'],
-            'featured_facility_id' => '488',
-            'featured_reason' => 'Seven Hills is again highlighted because a large Sunday arena crowd can ripple strongly through western rail-linked park-and-ride supply.',
-        ],
-    ];
-}
-
-function events_default_selected_event_id(array $events = []): string
-{
-    if ($events !== []) {
-        return (string) ($events[0]['id'] ?? '');
-    }
-
-    $catalog = events_curated_catalog();
-    return (string) ($catalog[0]['id'] ?? '');
-}
-
 function events_upcoming_bundle(?DateTimeImmutable $referenceNow = null): array
 {
-    $allEvents = events_curated_catalog();
     $now = $referenceNow instanceof DateTimeImmutable
         ? $referenceNow->setTimezone(events_timezone())
         : new DateTimeImmutable('now', events_timezone());
+    $catalogBundle = events_live_catalog_bundle($now);
+    $allEvents = is_array($catalogBundle['events'] ?? null) ? $catalogBundle['events'] : [];
     $today = $now->setTime(0, 0, 0);
     $windowEnd = $today->modify('+6 days')->setTime(23, 59, 59);
     $upcoming = [];
@@ -164,10 +42,10 @@ function events_upcoming_bundle(?DateTimeImmutable $referenceNow = null): array
     );
 
     return [
-        'generated_at' => $now->format('Y-m-d H:i:s'),
+        'generated_at' => (string) ($catalogBundle['generated_at'] ?? $now->format('Y-m-d H:i:s')),
         'window_label' => $today->format('d M') . ' to ' . $windowEnd->format('d M Y'),
         'events' => $forecastedEvents,
-        'note' => null,
+        'note' => $catalogBundle['note'] ?? null,
     ];
 }
 
@@ -186,10 +64,12 @@ function events_select_event(array $events, ?string $selectedEventId = null): ?a
     return $events[0] ?? null;
 }
 
-function events_view_payload(?string $selectedEventId = null): array
+function events_view_payload(?string $selectedEventId = null, ?string $selectedCategory = null): array
 {
     $bundle = events_upcoming_bundle();
-    $events = $bundle['events'];
+    $allEvents = $bundle['events'];
+    $categorySlug = events_normalize_category_slug($selectedCategory);
+    $events = events_filter_by_category($allEvents, $categorySlug);
     $selectedEvent = events_select_event($events, $selectedEventId);
     $featuredForecast = $selectedEvent['featured_forecast'] ?? null;
 
@@ -198,6 +78,8 @@ function events_view_payload(?string $selectedEventId = null): array
         'window_label' => $bundle['window_label'],
         'note' => $bundle['note'],
         'events' => $events,
+        'category_options' => events_category_options($allEvents),
+        'selected_category' => $categorySlug,
         'selected_event_id' => $selectedEvent['id'] ?? null,
         'selected_event' => $selectedEvent,
         'featured_title' => $featuredForecast && (string) ($featuredForecast['facility_id'] ?? '') === '3'
@@ -210,6 +92,97 @@ function events_view_payload(?string $selectedEventId = null): array
             ? array_map(fn(array $row) => round(((float) $row['predicted_rate']) * 100, 1), $selectedEvent['top_impact'])
             : [],
     ];
+}
+
+function events_normalize_category_slug(?string $selectedCategory): string
+{
+    $normalized = strtolower(trim((string) ($selectedCategory ?? 'all')));
+    return $normalized !== '' ? $normalized : 'all';
+}
+
+function events_filter_by_category(array $events, string $categorySlug): array
+{
+    if ($categorySlug === 'all') {
+        return array_map(
+            static fn(array $event): array => array_merge($event, [
+                'active_category_slug' => (string) ($event['category_slug'] ?? 'event'),
+                'active_category_label' => (string) ($event['category_label'] ?? 'Event'),
+            ]),
+            $events
+        );
+    }
+
+    $filtered = array_values(array_filter(
+        $events,
+        static function (array $event) use ($categorySlug): bool {
+            $slugs = is_array($event['category_slugs'] ?? null)
+                ? $event['category_slugs']
+                : [trim((string) ($event['category_slug'] ?? ''))];
+
+            foreach ($slugs as $slug) {
+                if (strtolower(trim((string) $slug)) === $categorySlug) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    ));
+
+    return array_map(
+        static function (array $event) use ($categorySlug): array {
+            $labels = is_array($event['category_labels'] ?? null) ? $event['category_labels'] : [];
+            $slugs = is_array($event['category_slugs'] ?? null) ? $event['category_slugs'] : [];
+            $activeLabel = (string) ($event['category_label'] ?? 'Event');
+
+            foreach ($slugs as $index => $slug) {
+                if (strtolower(trim((string) $slug)) === $categorySlug) {
+                    $activeLabel = trim((string) ($labels[$index] ?? $activeLabel)) ?: $activeLabel;
+                    break;
+                }
+            }
+
+            return array_merge($event, [
+                'active_category_slug' => $categorySlug,
+                'active_category_label' => $activeLabel,
+            ]);
+        },
+        $filtered
+    );
+}
+
+function events_category_options(array $events): array
+{
+    $options = [];
+
+    foreach ($events as $event) {
+        $slugs = is_array($event['category_slugs'] ?? null)
+            ? $event['category_slugs']
+            : [trim((string) ($event['category_slug'] ?? ''))];
+        $labels = is_array($event['category_labels'] ?? null)
+            ? $event['category_labels']
+            : [trim((string) ($event['category_label'] ?? ''))];
+
+        foreach ($slugs as $index => $slug) {
+            $normalizedSlug = trim((string) $slug);
+            if ($normalizedSlug === '') {
+                continue;
+            }
+
+            $label = trim((string) ($labels[$index] ?? $event['category_label'] ?? $normalizedSlug));
+            $options[$normalizedSlug] = [
+                'slug' => $normalizedSlug,
+                'label' => $label !== '' ? $label : ucfirst(str_replace('-', ' ', $normalizedSlug)),
+            ];
+        }
+    }
+
+    uasort(
+        $options,
+        static fn(array $left, array $right): int => strcmp((string) ($left['label'] ?? ''), (string) ($right['label'] ?? ''))
+    );
+
+    return array_values($options);
 }
 
 function events_parse_datetime(string $value): DateTimeImmutable
