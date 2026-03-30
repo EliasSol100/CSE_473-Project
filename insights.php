@@ -22,7 +22,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="section-title">
         <div>
             <h2>Insights and model performance</h2>
-            <p>Analytical highlights that explain utilization behavior and baseline model quality.</p>
+            <p>Analytical highlights that explain utilization behavior and simple baseline performance from real facility history.</p>
         </div>
         <div class="tag-row section-tags">
             <span class="tag" data-insights-last-refresh>Latest network refresh: <?= h(display_datetime($insightsPayload['summary']['last_refresh'] ?? null)) ?></span>
@@ -33,7 +33,7 @@ require_once __DIR__ . '/includes/header.php';
     <section class="info-grid">
         <article class="notice"><h3>Peak observed hour</h3><p class="muted">The highest average occupancy appears at <strong data-insights-peak-hour><?= h(sprintf('%02d:00', (int) ($peak['hour'] ?? 0))) ?></strong>, reaching <strong data-insights-peak-rate><?= h(format_percentage($peak['average_occupancy'] ?? 0)) ?></strong>.</p></article>
         <article class="notice"><h3>Coverage window</h3><p class="muted">Current records include <strong data-insights-observations><?= h(format_number($dataset['observations'] ?? 0)) ?></strong> observations from <strong data-insights-min-time><?= h(display_datetime($dataset['min_time'] ?? null)) ?></strong> to <strong data-insights-max-time><?= h(display_datetime($dataset['max_time'] ?? null)) ?></strong>.</p></article>
-        <article class="notice"><h3>Classification context</h3><p class="muted">Average classification accuracy is <strong data-insights-avg-accuracy><?= h(format_percentage($insightsPayload['avg_accuracy'] ?? 0, 1)) ?></strong>. Strong results can reflect class imbalance, so this metric should be interpreted with class distribution in mind.</p></article>
+        <article class="notice"><h3>Classification context</h3><p class="muted">Average baseline classification accuracy is <strong data-insights-avg-accuracy><?= h(format_percentage($insightsPayload['avg_accuracy'] ?? 0, 1)) ?></strong>. These scores are calculated from real sequential facility history, using the previous recorded status as the next-status baseline.</p></article>
     </section>
 
     <section class="chart-grid">
@@ -43,38 +43,48 @@ require_once __DIR__ . '/includes/header.php';
 
     <section class="grid-two" style="margin-bottom:24px;">
         <article class="table-card">
-            <h3>Top regression performance (lowest RMSE)</h3>
+            <h3>Baseline regression performance (lowest RMSE)</h3>
+            <p class="muted">Uses the previous recorded occupancy rate at each facility as the next-reading baseline prediction.</p>
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>Facility</th><th>Samples</th><th>MAE</th><th>RMSE</th><th>R2</th></tr></thead>
                     <tbody data-insights-regression-body>
-                        <?php foreach ($regMetrics as $row): ?>
-                            <tr>
-                                <td><?= h($row['facility_name']) ?></td>
-                                <td><?= h(format_number($row['sample_size'])) ?></td>
-                                <td><?= h(number_format((float) $row['mae'], 4)) ?></td>
-                                <td><?= h(number_format((float) $row['rmse'], 4)) ?></td>
-                                <td><?= $row['r2'] === null ? 'N/A' : h(number_format((float) $row['r2'], 3)) ?></td>
-                            </tr>
-                        <?php endforeach; ?>
+                        <?php if ($regMetrics === []): ?>
+                            <tr><td colspan="5" class="empty-state">No live regression baseline metrics are available yet.</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($regMetrics as $row): ?>
+                                <tr>
+                                    <td><?= h($row['facility_name']) ?></td>
+                                    <td><?= h(format_number($row['sample_size'])) ?></td>
+                                    <td><?= h(number_format((float) $row['mae'], 4)) ?></td>
+                                    <td><?= h(number_format((float) $row['rmse'], 4)) ?></td>
+                                    <td><?= $row['r2'] === null ? 'N/A' : h(number_format((float) $row['r2'], 3)) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
                     </tbody>
                 </table>
             </div>
         </article>
 
         <article class="table-card">
-            <h3>Classification accuracy by facility</h3>
+            <h3>Baseline classification accuracy by facility</h3>
+            <p class="muted">Shows how often the previous recorded availability class matched the next observed class for each facility.</p>
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>Facility</th><th>Samples</th><th>Accuracy</th></tr></thead>
                     <tbody data-insights-classification-body>
-                        <?php foreach ($clsMetrics as $row): ?>
-                            <tr>
-                                <td><?= h($row['facility_name']) ?></td>
-                                <td><?= h(format_number($row['sample_size'])) ?></td>
-                                <td><?= h(format_percentage(((float) $row['accuracy']) * 100)) ?></td>
-                            </tr>
-                        <?php endforeach; ?>
+                        <?php if ($clsMetrics === []): ?>
+                            <tr><td colspan="3" class="empty-state">No live classification baseline metrics are available yet.</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($clsMetrics as $row): ?>
+                                <tr>
+                                    <td><?= h($row['facility_name']) ?></td>
+                                    <td><?= h(format_number($row['sample_size'])) ?></td>
+                                    <td><?= h(format_percentage(((float) $row['accuracy']) * 100)) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
                     </tbody>
                 </table>
             </div>

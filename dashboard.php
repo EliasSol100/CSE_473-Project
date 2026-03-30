@@ -15,7 +15,6 @@ $summary = summary_metrics();
 $hourly = hourly_average_occupancy();
 $topLatest = top_latest_facilities(8);
 $distribution = availability_distribution();
-$latest = latest_snapshots();
 $hourLabels = array_map(fn($row) => sprintf('%02d:00', (int) $row['hour']), $hourly);
 $hourValues = array_map(fn($row) => (float) $row['average_occupancy'], $hourly);
 $topLabels = array_map(fn($row) => $row['facility_name'], $topLatest);
@@ -25,7 +24,6 @@ $distValues = array_map(fn($row) => (int) $row['total'], $distribution);
 $dashboardPayload = [
     'summary' => $summary,
     'top_latest' => $topLatest,
-    'latest' => $latest,
     'hourly' => $hourly,
     'distribution' => $distribution,
 ];
@@ -55,27 +53,12 @@ $dashboardPayload = [
 
     <section class="chart-card" style="margin-bottom:24px;"><h3>Most utilized facilities right now</h3><p class="muted">Facilities ranked by current occupancy percentage.</p><canvas id="busiestChart" height="120"></canvas></section>
 
-    <section class="table-card">
-        <div class="section-title"><div><h2>Latest facility status table</h2><p>Sorted by highest occupancy to surface high-demand locations first.</p></div></div>
-        <div class="table-wrap">
-            <table>
-                <thead><tr><th>Facility</th><th>Capacity</th><th>Occupied</th><th>Available</th><th>Occupancy</th><th>Status</th><th>Details</th></tr></thead>
-                <tbody data-latest-table-body>
-                    <?php foreach ($latest as $row): ?>
-                        <?php $percent = (float) $row['occupancy_rate'] * 100; ?>
-                        <tr>
-                            <td><?= h($row['facility_name']) ?></td>
-                            <td><?= h(format_number($row['capacity'])) ?></td>
-                            <td><?= h(format_number($row['occupied'])) ?></td>
-                            <td><?= h(format_number($row['available'])) ?></td>
-                            <td><strong><?= h(format_percentage($percent)) ?></strong><div class="progress" style="margin-top:8px;"><span style="width: <?= max(0, min(100, $percent)) ?>%"></span></div></td>
-                            <td><span class="status-pill <?= h(availability_badge_class($row['availability_class'])) ?>"><?= h($row['availability_class']) ?></span></td>
-                            <td><a href="facilities.php?facility_id=<?= urlencode($row['facility_id']) ?>">View facility</a></td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+    <section class="table-card dashboard-cta">
+        <div class="dashboard-cta-copy">
+            <h2>Need full facility details?</h2>
+            <p>Open the Facilities page to search every monitored site, filter by status, and inspect a selected facility's occupancy timeline.</p>
         </div>
+        <a class="btn btn-primary" href="facilities.php">View all facilities</a>
     </section>
 </div>
 <script>

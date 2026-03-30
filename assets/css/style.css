@@ -462,6 +462,13 @@ tbody tr:hover {
     margin-top: auto;
 }
 
+.selection-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 0 0 14px;
+}
+
 .forecast-feature {
     background: var(--surface);
 }
@@ -569,6 +576,27 @@ tbody tr:hover {
     line-height: 1.5;
 }
 
+.dashboard-cta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.dashboard-cta-copy h2 {
+    margin: 0 0 8px;
+    font-family: "Sora", "Segoe UI", sans-serif;
+    font-size: clamp(1.2rem, 2.2vw, 1.45rem);
+    letter-spacing: -0.01em;
+}
+
+.dashboard-cta-copy p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.55;
+    max-width: 720px;
+}
+
 @media (max-width: 900px) {
     .section-title {
         align-items: start;
@@ -577,6 +605,11 @@ tbody tr:hover {
 
     .section-tags {
         justify-content: flex-start;
+    }
+
+    .dashboard-cta {
+        align-items: flex-start;
+        flex-direction: column;
     }
 }
 

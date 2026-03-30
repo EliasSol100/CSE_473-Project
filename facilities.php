@@ -53,7 +53,7 @@ require_once __DIR__ . '/includes/header.php';
             </select>
             <form method="get" data-facilities-selection-form>
                 <select class="select-field" name="facility_id" data-facilities-facility-filter>
-                    <option value="">Select a facility to view history</option>
+                    <option value="">Show all facilities</option>
                     <?php foreach ($options as $option): ?>
                         <option value="<?= h($option['facility_id']) ?>" <?= $selectedFacilityId === $option['facility_id'] ? 'selected' : '' ?>><?= h($option['facility_name']) ?></option>
                     <?php endforeach; ?>

@@ -228,14 +228,136 @@ function capacity_leaders(int $limit = 10): array
     return fetch_all_assoc("SELECT facility_name, capacity FROM parking_facilities ORDER BY capacity DESC, facility_name ASC LIMIT {$limit}");
 }
 
+function live_baseline_performance_metrics(): array
+{
+    static $metrics = null;
+
+    if ($metrics !== null) {
+        return $metrics;
+    }
+
+    $rows = fetch_all_assoc("
+        SELECT s.facility_id, f.facility_name, s.occupancy_rate, s.availability_class
+        FROM occupancy_snapshots s
+        INNER JOIN parking_facilities f ON f.facility_id = s.facility_id
+        ORDER BY s.facility_id ASC, s.recorded_at ASC
+    ");
+
+    $byFacility = [];
+    $previous = [];
+
+    foreach ($rows as $row) {
+        $facilityId = (string) ($row['facility_id'] ?? '');
+        if ($facilityId === '') {
+            continue;
+        }
+
+        if (!isset($byFacility[$facilityId])) {
+            $byFacility[$facilityId] = [
+                'facility_name' => (string) ($row['facility_name'] ?? $facilityId),
+                'sample_size' => 0,
+                'sum_abs_error' => 0.0,
+                'sum_sq_error' => 0.0,
+                'sum_actual' => 0.0,
+                'sum_actual_sq' => 0.0,
+                'class_hits' => 0,
+                'distinct_rates' => [],
+                'distinct_classes' => [],
+            ];
+        }
+
+        $currentRate = (float) ($row['occupancy_rate'] ?? 0);
+        $currentClass = (string) ($row['availability_class'] ?? '');
+        $rateKey = number_format($currentRate, 4, '.', '');
+
+        $byFacility[$facilityId]['distinct_rates'][$rateKey] = true;
+        if ($currentClass !== '') {
+            $byFacility[$facilityId]['distinct_classes'][$currentClass] = true;
+        }
+
+        if (isset($previous[$facilityId])) {
+            $predictedRate = (float) $previous[$facilityId]['rate'];
+            $error = $currentRate - $predictedRate;
+
+            $byFacility[$facilityId]['sample_size']++;
+            $byFacility[$facilityId]['sum_abs_error'] += abs($error);
+            $byFacility[$facilityId]['sum_sq_error'] += $error * $error;
+            $byFacility[$facilityId]['sum_actual'] += $currentRate;
+            $byFacility[$facilityId]['sum_actual_sq'] += $currentRate * $currentRate;
+
+            if ((string) $previous[$facilityId]['class'] === $currentClass) {
+                $byFacility[$facilityId]['class_hits']++;
+            }
+        }
+
+        $previous[$facilityId] = [
+            'rate' => $currentRate,
+            'class' => $currentClass,
+        ];
+    }
+
+    $regression = [];
+    $classification = [];
+
+    foreach ($byFacility as $facilityMetrics) {
+        $sampleSize = (int) $facilityMetrics['sample_size'];
+        $distinctRateCount = count($facilityMetrics['distinct_rates']);
+        $distinctClassCount = count($facilityMetrics['distinct_classes']);
+
+        // Require enough real movement before surfacing "performance" rows.
+        if ($sampleSize >= 24 && $distinctRateCount >= 3) {
+            $mae = $facilityMetrics['sum_abs_error'] / $sampleSize;
+            $rmse = sqrt($facilityMetrics['sum_sq_error'] / $sampleSize);
+            $sumActual = $facilityMetrics['sum_actual'];
+            $sst = $facilityMetrics['sum_actual_sq'] - (($sumActual * $sumActual) / $sampleSize);
+            $r2 = $sst > 0.0000001 ? 1 - ($facilityMetrics['sum_sq_error'] / $sst) : null;
+
+            $regression[] = [
+                'facility_name' => $facilityMetrics['facility_name'],
+                'sample_size' => $sampleSize,
+                'mae' => $mae,
+                'rmse' => $rmse,
+                'r2' => $r2,
+            ];
+        }
+
+        if ($sampleSize >= 24 && $distinctClassCount >= 2) {
+            $classification[] = [
+                'facility_name' => $facilityMetrics['facility_name'],
+                'sample_size' => $sampleSize,
+                'accuracy' => $facilityMetrics['class_hits'] / $sampleSize,
+            ];
+        }
+    }
+
+    usort(
+        $regression,
+        fn(array $left, array $right) => ((float) $left['rmse'] <=> (float) $right['rmse'])
+            ?: strcmp((string) $left['facility_name'], (string) $right['facility_name'])
+    );
+
+    usort(
+        $classification,
+        fn(array $left, array $right) => ((float) $right['accuracy'] <=> (float) $left['accuracy'])
+            ?: strcmp((string) $left['facility_name'], (string) $right['facility_name'])
+    );
+
+    $metrics = [
+        'regression' => $regression,
+        'classification' => $classification,
+    ];
+
+    return $metrics;
+}
+
 function regression_metrics(): array
 {
-    return fetch_all_assoc("SELECT f.facility_name, m.sample_size, m.mae, m.rmse, m.r2 FROM model_regression_metrics m INNER JOIN parking_facilities f ON f.facility_id = m.facility_id ORDER BY m.rmse ASC, f.facility_name ASC");
+    return live_baseline_performance_metrics()['regression'];
 }
 
 function classification_metrics(): array
 {
-    return fetch_all_assoc("SELECT f.facility_name, m.sample_size, m.accuracy FROM model_classification_metrics m INNER JOIN parking_facilities f ON f.facility_id = m.facility_id ORDER BY m.accuracy DESC, f.facility_name ASC");
+    return live_baseline_performance_metrics()['classification'];
 }
 
 function percent_badge_class(float $percentage): string

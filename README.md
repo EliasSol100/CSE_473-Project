@@ -52,9 +52,6 @@ smart-parking-live/
 |  |- live_to_mysql.py
 |  |- requirements.txt
 |  |- run_live_collector.bat
-|- data/
-|  |- parking_cleaned.csv
-|  |- parking_processed.csv
 ```
 
 ## Local Setup (XAMPP)

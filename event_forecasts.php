@@ -13,7 +13,7 @@ try {
 $collectorIntervalSeconds = max(1, (int) round($collectorIntervalMs / 1000));
 
 $requestedEventId = isset($_GET['event']) ? trim((string) $_GET['event']) : null;
-$requestedCategory = isset($_GET['category']) ? trim((string) $_GET['category']) : 'all';
+$requestedCategory = 'all';
 $eventsPayload = events_view_payload($requestedEventId, $requestedCategory);
 $events = $eventsPayload['events'];
 $selectedEvent = $eventsPayload['selected_event'];
@@ -25,6 +25,9 @@ $topImpactLabels = $eventsPayload['top_impact_labels'];
 $topImpactValues = $eventsPayload['top_impact_values'];
 $hasEvents = $events !== [];
 $eventsSyncUrl = 'api/events_summary.php';
+$eventsOverviewUrl = $selectedEventId !== ''
+    ? 'events.php?event=' . urlencode($selectedEventId)
+    : 'events.php';
 $nearbyRadiusLabel = $selectedEvent
     ? rtrim(rtrim(number_format((float) ($selectedEvent['nearby_radius_km'] ?? 0), 1), '0'), '.')
     : '0';
@@ -43,7 +46,10 @@ $nearbyRadiusLabel = $selectedEvent
 
     <section class="notice" style="margin-bottom:24px;">
         <h3>Selection</h3>
-        <p class="muted" style="margin-bottom:14px;">Open another researched event forecast below, or return to <a href="events.php">Events</a> for the broader outlook.</p>
+        <p class="muted" style="margin-bottom:14px;">You are viewing the detailed forecast for the selected Sydney event. Return to the Events page any time to browse all current and upcoming event forecasts.</p>
+        <div class="selection-actions">
+            <a class="btn btn-secondary" href="<?= h($eventsOverviewUrl) ?>">&larr; Back to current and upcoming events</a>
+        </div>
         <div class="tag-row" style="margin-top:0;">
             <span class="tag">Selected event: <span data-events-selected-title><?= h($selectedEvent['title'] ?? 'None') ?></span></span>
             <span class="tag tag-category">Selected type: <span data-events-selected-category><?= h($selectedEvent['active_category_label'] ?? $selectedEvent['category_label'] ?? 'Event') ?></span></span>
@@ -75,51 +81,6 @@ $nearbyRadiusLabel = $selectedEvent
                 <div class="metric" data-events-featured-available><?= h(format_number($featuredForecast['predicted_available'] ?? 0)) ?></div>
                 <p class="muted">Live forecast for the highlighted facility most relevant to the selected event.</p>
             </article>
-        </section>
-
-        <section class="table-card" style="margin-bottom:24px;" data-events-browser>
-            <div class="section-title">
-                <div>
-                    <h3>Browse live event types</h3>
-                    <p>Filter the official Sydney event feed by category before opening a detailed forecast.</p>
-                </div>
-                <p class="muted" style="margin:0;" data-events-card-count>Showing <?= h(format_number(count($events))) ?> events</p>
-            </div>
-            <form class="filters" method="get" data-events-category-form>
-                <?php if ($selectedEventId !== ''): ?>
-                    <input type="hidden" name="event" value="<?= h($selectedEventId) ?>">
-                <?php endif; ?>
-                <select class="select-field" name="category" data-events-category-filter>
-                    <option value="all">All event types</option>
-                    <?php foreach (($eventsPayload['category_options'] ?? []) as $option): ?>
-                        <option value="<?= h($option['slug']) ?>"<?= $selectedCategory === (string) $option['slug'] ? ' selected' : '' ?>><?= h($option['label']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </form>
-        </section>
-
-        <section class="grid-two" style="margin-bottom:24px;" data-events-cards>
-            <?php foreach ($events as $event): ?>
-                <?php $active = $selectedEvent && $selectedEvent['id'] === $event['id']; ?>
-                <article class="panel event-selector<?= $active ? ' active' : '' ?>" data-event-id="<?= h($event['id']) ?>">
-                    <div class="tag-row" style="margin-top:0;">
-                        <span class="tag"><?= h(events_parse_datetime($event['starts_at'])->format('D, d M Y')) ?></span>
-                        <span class="tag tag-category"><?= h($event['active_category_label'] ?? $event['category_label'] ?? 'Event') ?></span>
-                        <span class="tag"><?= h($event['attendance_label']) ?>: <?= h(format_number($event['attendance_estimate'])) ?></span>
-                    </div>
-                    <h3><?= h($event['title']) ?></h3>
-                    <p class="muted"><?= h($event['starts_at_display']) ?> to <?= h($event['ends_at_display']) ?> | <?= h($event['venue_name']) ?>, <?= h($event['venue_area']) ?></p>
-                    <p class="muted"><?= h($event['network_headline']) ?></p>
-                    <div class="event-actions">
-                        <?php if ($active): ?>
-                            <span class="btn btn-disabled" aria-disabled="true">Current forecast</span>
-                        <?php else: ?>
-                            <a class="btn btn-primary" href="event_forecasts.php?event=<?= urlencode($event['id']) ?>">Open forecast</a>
-                        <?php endif; ?>
-                        <a class="btn btn-secondary" href="<?= h($event['source_url']) ?>" target="_blank" rel="noopener noreferrer">Official source</a>
-                    </div>
-                </article>
-            <?php endforeach; ?>
         </section>
 
         <section class="grid-two" style="margin-bottom:24px;">

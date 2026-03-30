@@ -311,11 +311,21 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }).join('');
     };
-    const getSelectedFacilityFilterValue = (host) => String(
-        host?.querySelector('[data-facilities-facility-filter]')?.value
-        || host?.getAttribute('data-live-facilities-selected')
-        || ''
-    ).trim();
+    const getSelectedFacilityFilterValue = (host) => {
+        const select = host?.querySelector('[data-facilities-facility-filter]');
+        if (select) {
+            return String(select.value ?? '').trim();
+        }
+
+        return String(host?.getAttribute('data-live-facilities-selected') || '').trim();
+    };
+    const resolveFacilitiesSelectedFacilityId = (host, payload) => {
+        if (payload && Object.prototype.hasOwnProperty.call(payload, 'selected_facility_id')) {
+            return String(payload.selected_facility_id ?? '').trim();
+        }
+
+        return getSelectedFacilityFilterValue(host);
+    };
     const buildFacilitiesPageUrl = (selectedFacilityId = '') => {
         const nextUrl = new URL(window.location.href);
         const facilityId = String(selectedFacilityId || '').trim();
@@ -328,12 +338,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return nextUrl;
     };
-    const buildFacilitiesSummaryUrl = (host, selectedFacilityId = '') => {
+    const buildFacilitiesSummaryUrl = (host, selectedFacilityId = null) => {
         const baseUrl = host && host.getAttribute('data-live-facilities-url')
             ? host.getAttribute('data-live-facilities-url')
             : 'api/facilities_summary.php';
         const nextUrl = new URL(baseUrl, window.location.href);
-        const facilityId = String(selectedFacilityId || getSelectedFacilityFilterValue(host) || '').trim();
+        const facilityId = selectedFacilityId === null || typeof selectedFacilityId === 'undefined'
+            ? getSelectedFacilityFilterValue(host)
+            : String(selectedFacilityId ?? '').trim();
 
         if (facilityId) {
             nextUrl.searchParams.set('facility_id', facilityId);
@@ -485,7 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const selectedFacilityId = String(payload.selected_facility_id || getSelectedFacilityFilterValue(host) || '').trim();
+        const selectedFacilityId = resolveFacilitiesSelectedFacilityId(host, payload);
         const nextPayload = {
             ...payload,
             selected_facility_id: selectedFacilityId
@@ -590,7 +602,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const renderRegressionRows = (rows) => {
         if (!Array.isArray(rows) || rows.length === 0) {
-            return '<tr><td colspan="5" class="empty-state">No regression metrics are available yet.</td></tr>';
+            return '<tr><td colspan="5" class="empty-state">No live regression baseline metrics are available yet.</td></tr>';
         }
 
         return rows.map((row) => `
@@ -605,7 +617,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const renderClassificationRows = (rows) => {
         if (!Array.isArray(rows) || rows.length === 0) {
-            return '<tr><td colspan="3" class="empty-state">No classification metrics are available yet.</td></tr>';
+            return '<tr><td colspan="3" class="empty-state">No live classification baseline metrics are available yet.</td></tr>';
         }
 
         return rows.map((row) => `
@@ -686,6 +698,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const dataset = payload.dataset || {};
         const fields = {
             facilities: host.querySelector('[data-about-facilities]'),
+            facilitiesCount: host.querySelector('[data-about-facilities-count]'),
             minTime: host.querySelector('[data-about-min-time]'),
             maxTime: host.querySelector('[data-about-max-time]'),
             observations: host.querySelector('[data-about-observations]')
@@ -693,6 +706,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (fields.facilities) {
             fields.facilities.textContent = `Monitored facilities: ${formatNumber(summary.facilities_count)}`;
+        }
+        if (fields.facilitiesCount) {
+            fields.facilitiesCount.textContent = formatNumber(summary.facilities_count);
         }
         if (fields.minTime) {
             fields.minTime.textContent = formatUtcDateTime(dataset.min_time);

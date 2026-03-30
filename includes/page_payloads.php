@@ -57,8 +57,10 @@ function insights_page_payload(): array
     $peak = peak_hour();
     $topAverage = top_average_occupancy(10);
     $capacityLeaders = capacity_leaders(10);
-    $regMetrics = array_slice(regression_metrics(), 0, 10);
-    $clsMetrics = array_slice(classification_metrics(), 0, 10);
+    $allRegMetrics = regression_metrics();
+    $allClsMetrics = classification_metrics();
+    $regMetrics = array_slice($allRegMetrics, 0, 10);
+    $clsMetrics = array_slice($allClsMetrics, 0, 10);
 
     return [
         'summary' => summary_metrics(),
@@ -68,7 +70,7 @@ function insights_page_payload(): array
         'capacity_leaders' => $capacityLeaders,
         'regression_metrics' => $regMetrics,
         'classification_metrics' => $clsMetrics,
-        'avg_accuracy' => insights_average_accuracy($clsMetrics),
+        'avg_accuracy' => insights_average_accuracy($allClsMetrics),
         'top_average_labels' => array_map(
             fn(array $row) => $row['facility_name'],
             array_slice($topAverage, 0, 8)
