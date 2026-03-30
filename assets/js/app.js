@@ -1,15 +1,93 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const rootStyles = getComputedStyle(document.documentElement);
-    const chartPrimary = rootStyles.getPropertyValue('--chart-primary').trim() || '#0e5eb5';
-    const chartSecondary = rootStyles.getPropertyValue('--chart-secondary').trim() || '#0ea5a8';
-    const chartAccent = rootStyles.getPropertyValue('--chart-accent').trim() || '#f59e0b';
-    const chartDanger = rootStyles.getPropertyValue('--chart-danger').trim() || '#b0302f';
+    const getRootStyles = () => getComputedStyle(document.documentElement);
+    const getChartTheme = () => {
+        if (typeof window.smartParkingChartColors === 'function') {
+            return window.smartParkingChartColors();
+        }
 
-    if (window.Chart) {
-        Chart.defaults.font.family = '"Public Sans", "Segoe UI", sans-serif';
-        Chart.defaults.color = rootStyles.getPropertyValue('--muted').trim() || '#53627a';
-        Chart.defaults.plugins.legend.labels.usePointStyle = true;
-    }
+        const rootStyles = getRootStyles();
+        return {
+            muted: rootStyles.getPropertyValue('--muted').trim() || '#53627a',
+            primary: rootStyles.getPropertyValue('--chart-primary').trim() || '#0e5eb5',
+            secondary: rootStyles.getPropertyValue('--chart-secondary').trim() || '#0ea5a8',
+            accent: rootStyles.getPropertyValue('--chart-accent').trim() || '#f59e0b',
+            danger: rootStyles.getPropertyValue('--chart-danger').trim() || '#b0302f'
+        };
+    };
+    const applyChartTheme = () => {
+        const chartTheme = getChartTheme();
+
+        if (typeof window.applySmartParkingChartTheme === 'function') {
+            window.applySmartParkingChartTheme();
+        }
+
+        if (!window.Chart) {
+            return chartTheme;
+        }
+
+        const chartInstances = Object.values(Chart.instances || {});
+        chartInstances.forEach((chart) => {
+            if (!chart || !chart.options) {
+                return;
+            }
+
+            if (chart.options.plugins?.legend?.labels) {
+                chart.options.plugins.legend.labels.color = chartTheme.muted;
+            }
+            if (chart.options.scales) {
+                Object.values(chart.options.scales).forEach((scale) => {
+                    if (!scale) {
+                        return;
+                    }
+                    scale.ticks = { ...(scale.ticks || {}), color: chartTheme.muted };
+                    scale.grid = { ...(scale.grid || {}), color: 'rgba(128, 146, 173, 0.16)' };
+                    scale.border = { ...(scale.border || {}), color: 'rgba(128, 146, 173, 0.2)' };
+                });
+            }
+
+            chart.update('none');
+        });
+
+        return chartTheme;
+    };
+    applyChartTheme();
+    const getCurrentTheme = () => String(document.documentElement.getAttribute('data-theme') || 'light').trim().toLowerCase() === 'dark'
+        ? 'dark'
+        : 'light';
+    const syncThemeToggleUi = () => {
+        const theme = getCurrentTheme();
+        const nextModeLabel = theme === 'dark' ? 'light' : 'dark';
+
+        document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
+            button.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+            button.setAttribute('aria-label', `Switch to ${nextModeLabel} mode`);
+            button.setAttribute('title', `Switch to ${nextModeLabel} mode`);
+
+            const label = button.querySelector('.theme-toggle-label');
+            if (label) {
+                label.textContent = theme === 'dark' ? 'Light mode' : 'Dark mode';
+            }
+        });
+    };
+    const setTheme = (theme) => {
+        const normalizedTheme = theme === 'dark' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', normalizedTheme);
+
+        try {
+            window.localStorage.setItem('smartParkingTheme', normalizedTheme);
+        } catch (error) {
+            console.warn('Theme preference could not be saved:', error);
+        }
+
+        applyChartTheme();
+        syncThemeToggleUi();
+    };
+    document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
+        button.addEventListener('click', () => {
+            setTheme(getCurrentTheme() === 'dark' ? 'light' : 'dark');
+        });
+    });
+    syncThemeToggleUi();
 
     const numberFormatter = new Intl.NumberFormat('en-US');
 
@@ -46,7 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const percentBadgeClass = (value) => {
         const numeric = Number(value) || 0;
-        if (numeric >= 90) {
+        if (numeric >= 100) {
             return 'status-full';
         }
         if (numeric >= 70) {
@@ -463,6 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const historyCanvas = shell.querySelector('[data-facilities-history-chart]');
             if (historyCanvas && window.Chart) {
+                const chartTheme = getChartTheme();
                 window.facilitiesCharts.history = new Chart(historyCanvas, {
                     type: 'line',
                     data: {
@@ -470,7 +549,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         datasets: [{
                             label: 'Occupancy %',
                             data: historyValues,
-                            borderColor: chartPrimary,
+                            borderColor: chartTheme.primary,
                             backgroundColor: 'rgba(14, 94, 181, 0.12)',
                             borderWidth: 3,
                             tension: 0.22,
@@ -602,7 +681,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const renderRegressionRows = (rows) => {
         if (!Array.isArray(rows) || rows.length === 0) {
-            return '<tr><td colspan="5" class="empty-state">No live regression baseline metrics are available yet.</td></tr>';
+            return '<tr><td colspan="5" class="empty-state">No regression baseline metrics are available yet.</td></tr>';
         }
 
         return rows.map((row) => `
@@ -617,7 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const renderClassificationRows = (rows) => {
         if (!Array.isArray(rows) || rows.length === 0) {
-            return '<tr><td colspan="3" class="empty-state">No live classification baseline metrics are available yet.</td></tr>';
+            return '<tr><td colspan="3" class="empty-state">No classification baseline metrics are available yet.</td></tr>';
         }
 
         return rows.map((row) => `
@@ -645,6 +724,9 @@ document.addEventListener('DOMContentLoaded', () => {
             minTime: host.querySelector('[data-insights-min-time]'),
             maxTime: host.querySelector('[data-insights-max-time]'),
             avgAccuracy: host.querySelector('[data-insights-avg-accuracy]'),
+            classificationContext: host.querySelector('[data-insights-classification-context]'),
+            regressionNote: host.querySelector('[data-insights-regression-note]'),
+            classificationNote: host.querySelector('[data-insights-classification-note]'),
             regressionBody: host.querySelector('[data-insights-regression-body]'),
             classificationBody: host.querySelector('[data-insights-classification-body]')
         };
@@ -669,6 +751,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (fields.avgAccuracy) {
             fields.avgAccuracy.textContent = formatPercentage(payload.avg_accuracy, 1);
+        }
+        if (fields.classificationContext) {
+            fields.classificationContext.textContent = payload.classification_context_note || '';
+        }
+        if (fields.regressionNote) {
+            fields.regressionNote.textContent = payload.regression_note || '';
+        }
+        if (fields.classificationNote) {
+            fields.classificationNote.textContent = payload.classification_note || '';
         }
         if (fields.regressionBody) {
             fields.regressionBody.innerHTML = renderRegressionRows(regressionMetrics);

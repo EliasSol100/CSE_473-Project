@@ -539,7 +539,7 @@ function live_collector_extract_fields(array $payload, ?string $fallbackName = n
         'occupied' => $occupied,
         'available' => $available,
         'occupancy_rate' => $occupancyRate,
-        'availability_class' => live_collector_availability_class($occupancyRate),
+        'availability_class' => live_collector_availability_class($occupancyRate, $available),
         'recorded_at' => $observedAt,
         'hour' => (int) $observedAt->format('G'),
         'day_of_week' => max(0, ((int) $observedAt->format('N')) - 1),
@@ -632,17 +632,17 @@ function live_collector_parse_timestamp(array $payload): DateTimeImmutable
     return new DateTimeImmutable('now', new DateTimeZone('UTC'));
 }
 
-function live_collector_availability_class(float $occupancyRate): string
+function live_collector_availability_class(float $occupancyRate, int $available): string
 {
-    if ($occupancyRate < 0.70) {
-        return 'Available';
+    if ($available <= 0) {
+        return 'Full';
     }
 
-    if ($occupancyRate < 0.90) {
+    if ($occupancyRate >= 0.70) {
         return 'Limited';
     }
 
-    return 'Full';
+    return 'Available';
 }
 
 function live_collector_persist_items(array $items): array
@@ -672,8 +672,8 @@ function live_collector_persist_items(array $items): array
     $snapshotStatement = $connection->prepare(
         "
         INSERT INTO occupancy_snapshots
-            (facility_id, recorded_at, occupied, available, occupancy_rate, availability_class, hour, day_of_week, is_weekend, month)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (facility_id, recorded_at, occupied, available, occupancy_rate, availability_class, hour, day_of_week, is_weekend, month, snapshot_source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
             occupied = VALUES(occupied),
             available = VALUES(available),
@@ -682,7 +682,8 @@ function live_collector_persist_items(array $items): array
             hour = VALUES(hour),
             day_of_week = VALUES(day_of_week),
             is_weekend = VALUES(is_weekend),
-            month = VALUES(month)
+            month = VALUES(month),
+            snapshot_source = VALUES(snapshot_source)
         "
     );
 
@@ -755,9 +756,10 @@ function live_collector_upsert_snapshot(mysqli_stmt $statement, array $item): in
     $dayOfWeek = (int) $item['day_of_week'];
     $isWeekend = (int) $item['is_weekend'];
     $month = (int) $item['month'];
+    $snapshotSource = 'live';
 
     $statement->bind_param(
-        'ssiissiiii',
+        'ssiissiiiis',
         $facilityId,
         $recordedAt,
         $occupied,
@@ -767,7 +769,8 @@ function live_collector_upsert_snapshot(mysqli_stmt $statement, array $item): in
         $hour,
         $dayOfWeek,
         $isWeekend,
-        $month
+        $month,
+        $snapshotSource
     );
 
     if (!$statement->execute()) {

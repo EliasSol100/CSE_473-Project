@@ -18,6 +18,10 @@ function facilities_page_payload(string $selectedFacilityId = ''): array
 {
     $selectedFacilityId = trim($selectedFacilityId);
     $selectedSummary = $selectedFacilityId !== '' ? facility_summary($selectedFacilityId) : null;
+    if ($selectedFacilityId !== '' && $selectedSummary === null) {
+        $selectedFacilityId = '';
+    }
+
     $history = $selectedFacilityId !== '' ? facility_history($selectedFacilityId) : [];
     $historyLabels = array_map(
         fn(array $row) => gmdate('H:i', strtotime((string) $row['recorded_at'])),
@@ -57,10 +61,21 @@ function insights_page_payload(): array
     $peak = peak_hour();
     $topAverage = top_average_occupancy(10);
     $capacityLeaders = capacity_leaders(10);
-    $allRegMetrics = regression_metrics();
-    $allClsMetrics = classification_metrics();
+    $metricsSource = insights_metrics_source();
+    $allRegMetrics = regression_metrics_for_source($metricsSource);
+    $allClsMetrics = classification_metrics_for_source($metricsSource);
     $regMetrics = array_slice($allRegMetrics, 0, 10);
     $clsMetrics = array_slice($allClsMetrics, 0, 10);
+    $metricsSourceLabel = $metricsSource === 'live' ? 'Live collector history' : 'Imported SQL baseline';
+    $classificationContextNote = $metricsSource === 'live'
+        ? 'Average baseline classification accuracy is calculated from real sequential facility history, using the previous recorded status as the next-status baseline.'
+        : 'The live collector is not currently active, so this view is using the imported SQL baseline metrics as a fallback.';
+    $regressionNote = $metricsSource === 'live'
+        ? 'Uses the previous recorded occupancy rate at each facility as the next-reading baseline prediction.'
+        : 'Showing the regression metrics imported from the SQL setup file as the current fallback baseline.';
+    $classificationNote = $metricsSource === 'live'
+        ? 'Shows how often the previous recorded availability class matched the next observed class for each facility.'
+        : 'Showing the classification metrics imported from the SQL setup file as the current fallback baseline.';
 
     return [
         'summary' => summary_metrics(),
@@ -71,6 +86,11 @@ function insights_page_payload(): array
         'regression_metrics' => $regMetrics,
         'classification_metrics' => $clsMetrics,
         'avg_accuracy' => insights_average_accuracy($allClsMetrics),
+        'metrics_source' => $metricsSource,
+        'metrics_source_label' => $metricsSourceLabel,
+        'classification_context_note' => $classificationContextNote,
+        'regression_note' => $regressionNote,
+        'classification_note' => $classificationNote,
         'top_average_labels' => array_map(
             fn(array $row) => $row['facility_name'],
             array_slice($topAverage, 0, 8)

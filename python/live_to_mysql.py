@@ -187,12 +187,12 @@ def parse_timestamp(payload: dict[str, Any]) -> datetime:
     return datetime.now(timezone.utc)
 
 
-def availability_class(rate: float) -> str:
-    if rate < 0.70:
-        return "Available"
-    if rate < 0.90:
+def availability_class(rate: float, available: int) -> str:
+    if available <= 0:
+        return "Full"
+    if rate >= 0.70:
         return "Limited"
-    return "Full"
+    return "Available"
 
 
 def extract_fields(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -224,7 +224,7 @@ def extract_fields(payload: dict[str, Any]) -> dict[str, Any] | None:
         "occupied": occupied,
         "available": available,
         "occupancy_rate": occupancy_rate,
-        "availability_class": availability_class(occupancy_rate),
+        "availability_class": availability_class(occupancy_rate, available),
         "recorded_at": observed_at,
         "hour": observed_at.hour,
         "day_of_week": observed_at.weekday(),

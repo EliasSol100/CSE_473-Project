@@ -28,7 +28,10 @@ CREATE TABLE occupancy_snapshots (
     day_of_week TINYINT NOT NULL,
     is_weekend TINYINT(1) NOT NULL DEFAULT 0,
     month TINYINT NOT NULL,
+    snapshot_source VARCHAR(16) NOT NULL DEFAULT 'seed',
     UNIQUE KEY uniq_facility_time (facility_id, recorded_at),
+    KEY idx_snapshots_source_time (snapshot_source, recorded_at),
+    KEY idx_snapshots_source_facility_time (snapshot_source, facility_id, recorded_at),
     KEY idx_snapshots_time (recorded_at),
     KEY idx_snapshots_facility (facility_id),
     CONSTRAINT fk_snapshots_facility FOREIGN KEY (facility_id) REFERENCES parking_facilities(facility_id)

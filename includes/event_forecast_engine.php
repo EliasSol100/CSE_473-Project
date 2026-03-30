@@ -368,13 +368,15 @@ function events_display_radius_km(array $event): float
 function events_baseline_profiles(int $hour, ?int $isWeekend): array
 {
     static $cache = [];
-    $cacheKey = $hour . '|' . ($isWeekend === null ? 'any' : (string) $isWeekend);
+    $source = snapshot_data_source();
+    $cacheKey = $source . '|' . $hour . '|' . ($isWeekend === null ? 'any' : (string) $isWeekend);
     if (isset($cache[$cacheKey])) {
         return $cache[$cacheKey];
     }
 
     $hourStart = max(0, $hour - 1);
     $hourEnd = min(23, $hour + 1);
+    $sourceCondition = snapshot_source_condition();
 
     if ($isWeekend === null) {
         $stmt = db()->prepare(
@@ -382,7 +384,8 @@ function events_baseline_profiles(int $hour, ?int $isWeekend): array
             SELECT facility_id, AVG(occupied) AS avg_occupied, AVG(available) AS avg_available,
                    AVG(occupancy_rate) AS avg_rate, COUNT(*) AS sample_count
             FROM occupancy_snapshots
-            WHERE hour BETWEEN ? AND ?
+            WHERE {$sourceCondition}
+              AND hour BETWEEN ? AND ?
             GROUP BY facility_id
             "
         );
@@ -393,7 +396,8 @@ function events_baseline_profiles(int $hour, ?int $isWeekend): array
             SELECT facility_id, AVG(occupied) AS avg_occupied, AVG(available) AS avg_available,
                    AVG(occupancy_rate) AS avg_rate, COUNT(*) AS sample_count
             FROM occupancy_snapshots
-            WHERE is_weekend = ? AND hour BETWEEN ? AND ?
+            WHERE {$sourceCondition}
+              AND is_weekend = ? AND hour BETWEEN ? AND ?
             GROUP BY facility_id
             "
         );
