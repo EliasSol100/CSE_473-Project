@@ -122,6 +122,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return 'status-available';
     };
+    const availabilityChartColor = (label) => {
+        const normalized = String(label || '').trim().toLowerCase();
+        const chartTheme = getChartTheme();
+        if (normalized === 'full') {
+            return chartTheme.danger;
+        }
+        if (normalized === 'limited') {
+            return chartTheme.accent;
+        }
+        return chartTheme.secondary;
+    };
     const percentBadgeClass = (value) => {
         const numeric = Number(value) || 0;
         if (numeric >= 100) {
@@ -360,6 +371,10 @@ document.addEventListener('DOMContentLoaded', () => {
             distribution.map((row) => row.availability_class || ''),
             distribution.map((row) => Number(row.total) || 0)
         );
+        if (window.dashboardCharts && window.dashboardCharts.availability && window.dashboardCharts.availability.data.datasets[0]) {
+            window.dashboardCharts.availability.data.datasets[0].backgroundColor = distribution.map((row) => availabilityChartColor(row.availability_class || ''));
+            window.dashboardCharts.availability.update();
+        }
         updateChartData(
             window.dashboardCharts && window.dashboardCharts.busiest,
             topLatest.map((row) => row.facility_name || ''),

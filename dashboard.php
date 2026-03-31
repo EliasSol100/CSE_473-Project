@@ -75,6 +75,16 @@ const chartPrimary = rootStyles.getPropertyValue('--chart-primary').trim() || '#
 const chartSecondary = rootStyles.getPropertyValue('--chart-secondary').trim() || '#0ea5a8';
 const chartAccent = rootStyles.getPropertyValue('--chart-accent').trim() || '#f59e0b';
 const chartDanger = rootStyles.getPropertyValue('--chart-danger').trim() || '#b0302f';
+const availabilityColorForLabel = (label) => {
+    const normalized = String(label || '').trim().toLowerCase();
+    if (normalized === 'full') {
+        return chartDanger;
+    }
+    if (normalized === 'limited') {
+        return chartAccent;
+    }
+    return chartSecondary;
+};
 
 window.dashboardCharts = {};
 window.dashboardCharts.hourly = new Chart(document.getElementById('hourlyChart'), {
@@ -105,7 +115,7 @@ window.dashboardCharts.availability = new Chart(document.getElementById('availab
         labels: distLabels,
         datasets: [{
             data: distValues,
-            backgroundColor: [chartSecondary, chartAccent, chartDanger, chartPrimary],
+            backgroundColor: distLabels.map((label) => availabilityColorForLabel(label)),
             borderWidth: 1
         }]
     },
