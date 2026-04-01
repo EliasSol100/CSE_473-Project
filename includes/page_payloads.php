@@ -17,10 +17,17 @@ function home_page_payload(): array
 function facilities_page_payload(string $selectedFacilityId = ''): array
 {
     $selectedFacilityId = trim($selectedFacilityId);
+    $latest = latest_snapshots();
+    $predictionBundle = facility_hourly_predictions($latest);
+    $predictions = is_array($predictionBundle['predictions'] ?? null) ? $predictionBundle['predictions'] : [];
     $selectedSummary = $selectedFacilityId !== '' ? facility_summary($selectedFacilityId) : null;
     if ($selectedFacilityId !== '' && $selectedSummary === null) {
         $selectedFacilityId = '';
     }
+
+    $selectedPrediction = $selectedFacilityId !== '' && isset($predictions[$selectedFacilityId])
+        ? $predictions[$selectedFacilityId]
+        : null;
 
     $history = $selectedFacilityId !== '' ? facility_history($selectedFacilityId) : [];
     $historyLabels = array_map(
@@ -35,10 +42,14 @@ function facilities_page_payload(string $selectedFacilityId = ''): array
     return [
         'summary' => summary_metrics(),
         'selected_facility_id' => $selectedFacilityId,
-        'facilities' => latest_snapshots(),
+        'facilities' => $latest,
         'selected_summary' => $selectedSummary,
+        'selected_prediction' => $selectedPrediction,
         'history_labels' => $historyLabels,
         'history_values' => $historyValues,
+        'prediction_windows' => $predictionBundle['windows'] ?? [],
+        'hourly_predictions' => $predictions,
+        'prediction_summary' => $predictionBundle['summary'] ?? [],
     ];
 }
 

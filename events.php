@@ -91,7 +91,11 @@ $eventsSyncUrl = 'api/events_summary.php';
                         <span class="tag"><?= h($event['attendance_label']) ?>: <?= h(format_number($event['attendance_estimate'])) ?></span>
                     </div>
                     <h3><?= h($event['title']) ?></h3>
-                    <p class="muted"><?= h($event['starts_at_display']) ?> to <?= h($event['ends_at_display']) ?> | <?= h($event['venue_name']) ?>, <?= h($event['venue_area']) ?></p>
+                    <div class="event-meta-list">
+                        <p class="muted event-meta-item"><strong>Starts:</strong> <?= h($event['starts_at_display']) ?></p>
+                        <p class="muted event-meta-item"><strong>Ends:</strong> <?= h($event['ends_at_display']) ?></p>
+                        <p class="muted event-meta-item"><strong>Venue:</strong> <?= h($event['venue_name']) ?>, <?= h($event['venue_area']) ?></p>
+                    </div>
                     <p class="muted"><?= h($event['network_headline']) ?></p>
                     <div class="event-actions">
                         <a class="btn btn-primary" href="event_forecasts.php?event=<?= urlencode($event['id']) ?>">Open forecast</a>

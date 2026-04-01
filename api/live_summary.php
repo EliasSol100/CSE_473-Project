@@ -7,6 +7,7 @@ require_once __DIR__ . '/../includes/functions.php';
 $summary = summary_metrics();
 $latest = latest_snapshots();
 $topLatest = array_slice($latest, 0, 8);
+$predictionBundle = facility_hourly_predictions($latest);
 
 echo json_encode([
     'summary' => $summary,
@@ -15,4 +16,7 @@ echo json_encode([
     'top_latest' => $topLatest,
     'hourly' => hourly_average_occupancy(),
     'distribution' => availability_distribution(),
+    'prediction_windows' => $predictionBundle['windows'] ?? [],
+    'hourly_predictions' => $predictionBundle['predictions'] ?? [],
+    'prediction_summary' => $predictionBundle['summary'] ?? [],
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

@@ -56,6 +56,22 @@ function db_ensure_runtime_schema(mysqli $connection): void
         return;
     }
 
+    if (db_table_exists($connection, 'parking_facilities')) {
+        if (!db_table_has_column($connection, 'parking_facilities', 'is_open_24_7')) {
+            $connection->query(
+                "ALTER TABLE parking_facilities
+                 ADD COLUMN is_open_24_7 TINYINT(1) NULL DEFAULT NULL AFTER capacity"
+            );
+        }
+
+        if (!db_table_has_column($connection, 'parking_facilities', 'operating_hours_json')) {
+            $connection->query(
+                "ALTER TABLE parking_facilities
+                 ADD COLUMN operating_hours_json TEXT NULL AFTER is_open_24_7"
+            );
+        }
+    }
+
     $addedSourceColumn = false;
 
     if (!db_table_has_column($connection, 'occupancy_snapshots', 'snapshot_source')) {

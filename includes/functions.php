@@ -130,6 +130,68 @@ function occupancy_availability_class($available, $occupancyRate): string
     return 'Available';
 }
 
+function operating_hours_text_is_24_7(string $value): bool
+{
+    $text = strtolower(trim($value));
+    if ($text === '') {
+        return false;
+    }
+
+    $text = preg_replace('/\s+/', ' ', $text) ?? $text;
+
+    return str_contains($text, '24/7')
+        || str_contains($text, '24 7')
+        || str_contains($text, '24 hours')
+        || str_contains($text, 'open all day')
+        || str_contains($text, 'always open');
+}
+
+function facility_hours_overrides(): array
+{
+    static $overrides = null;
+
+    if (is_array($overrides)) {
+        return $overrides;
+    }
+
+    $path = __DIR__ . '/facility_hours_overrides.php';
+    if (!is_file($path)) {
+        $overrides = [];
+        return $overrides;
+    }
+
+    $data = require $path;
+    $overrides = is_array($data) ? $data : [];
+    return $overrides;
+}
+
+function facility_override_hours(string $facilityId): ?array
+{
+    $facilityId = trim($facilityId);
+    if ($facilityId === '') {
+        return null;
+    }
+
+    $overrides = facility_hours_overrides();
+    if (!isset($overrides[$facilityId]) || !is_array($overrides[$facilityId])) {
+        return null;
+    }
+
+    $hours = trim((string) ($overrides[$facilityId]['hours'] ?? ''));
+    if ($hours === '') {
+        return null;
+    }
+
+    $isOpen247 = array_key_exists('is_open_24_7', $overrides[$facilityId])
+        ? ((int) $overrides[$facilityId]['is_open_24_7'] === 1 ? 1 : 0)
+        : (operating_hours_text_is_24_7($hours) ? 1 : 0);
+
+    return [
+        'is_open_24_7' => $isOpen247,
+        'hours' => $hours,
+    ];
+}
+
 function normalize_snapshot_row(array $row): array
 {
     $row['availability_class'] = occupancy_availability_class(
@@ -211,7 +273,7 @@ function latest_snapshots(): array
     $innerCondition = snapshot_source_condition();
 
     $sql = "
-        SELECT s.facility_id, f.facility_name, f.latitude, f.longitude, f.capacity,
+        SELECT s.facility_id, f.facility_name, f.latitude, f.longitude, f.capacity, f.is_open_24_7, f.operating_hours_json,
                s.recorded_at, s.occupied, s.available, s.occupancy_rate, s.availability_class
         FROM occupancy_snapshots s
         INNER JOIN (
@@ -240,6 +302,277 @@ function latest_snapshots(): array
     );
 
     return $rows;
+}
+
+function parking_timezone(): DateTimeZone
+{
+    static $timezone = null;
+
+    if (!$timezone instanceof DateTimeZone) {
+        $timezone = new DateTimeZone('Australia/Sydney');
+    }
+
+    return $timezone;
+}
+
+function parking_forecast_windows(): array
+{
+    $now = new DateTimeImmutable('now', parking_timezone());
+    $currentStart = $now->setTime((int) $now->format('G'), 0, 0);
+    $currentEnd = $currentStart->modify('+1 hour');
+    $nextStart = $currentEnd;
+    $nextEnd = $nextStart->modify('+1 hour');
+
+    return [
+        'timezone' => parking_timezone()->getName(),
+        'now_label' => $now->format('d M Y, H:i'),
+        'current_until_label' => 'Forecast later this hour (to ' . $currentEnd->format('H:i') . ')',
+        'current' => [
+            'start' => $currentStart,
+            'end' => $currentEnd,
+            'hour' => (int) $currentStart->format('G'),
+            'is_weekend' => ((int) $currentStart->format('N')) >= 6 ? 1 : 0,
+            'label' => $currentStart->format('H:i') . ' - ' . $currentEnd->format('H:i'),
+        ],
+        'next' => [
+            'start' => $nextStart,
+            'end' => $nextEnd,
+            'hour' => (int) $nextStart->format('G'),
+            'is_weekend' => ((int) $nextStart->format('N')) >= 6 ? 1 : 0,
+            'label' => $nextStart->format('H:i') . ' - ' . $nextEnd->format('H:i'),
+        ],
+    ];
+}
+
+function facility_hourly_predictions(array $latestRows = []): array
+{
+    $windows = parking_forecast_windows();
+    $rows = $latestRows !== [] ? $latestRows : latest_snapshots();
+
+    if ($rows === []) {
+        return [
+            'windows' => $windows,
+            'predictions' => [],
+            'summary' => [
+                'current_window_available_total' => 0,
+                'next_window_available_total' => 0,
+                'open_24_7_count' => 0,
+                'limited_hours_count' => 0,
+                'unknown_hours_count' => 0,
+            ],
+        ];
+    }
+
+    $condition = snapshot_source_condition();
+    $facilityHourRows = fetch_all_assoc(" 
+        SELECT facility_id, hour, is_weekend, AVG(occupancy_rate) AS avg_rate
+        FROM occupancy_snapshots
+        WHERE {$condition}
+        GROUP BY facility_id, hour, is_weekend
+    ");
+    $facilityHourAnyRows = fetch_all_assoc(" 
+        SELECT facility_id, hour, AVG(occupancy_rate) AS avg_rate
+        FROM occupancy_snapshots
+        WHERE {$condition}
+        GROUP BY facility_id, hour
+    ");
+
+    $globalHourly = [];
+    foreach (hourly_average_occupancy() as $row) {
+        $hour = (int) ($row['hour'] ?? 0);
+        $globalHourly[$hour] = max(0.0, min(1.0, ((float) ($row['average_occupancy'] ?? 0)) / 100));
+    }
+
+    $facilityHourMap = [];
+    foreach ($facilityHourRows as $row) {
+        $facilityId = (string) ($row['facility_id'] ?? '');
+        $hour = (int) ($row['hour'] ?? 0);
+        $isWeekend = (int) ($row['is_weekend'] ?? 0);
+        $key = $facilityId . '|' . $hour . '|' . $isWeekend;
+        $facilityHourMap[$key] = (float) ($row['avg_rate'] ?? 0);
+    }
+
+    $facilityHourAnyMap = [];
+    foreach ($facilityHourAnyRows as $row) {
+        $facilityId = (string) ($row['facility_id'] ?? '');
+        $hour = (int) ($row['hour'] ?? 0);
+        $key = $facilityId . '|' . $hour;
+        $facilityHourAnyMap[$key] = (float) ($row['avg_rate'] ?? 0);
+    }
+
+    $predictions = [];
+    $currentAvailableTotal = 0;
+    $nextAvailableTotal = 0;
+    $open247Count = 0;
+    $limitedHoursCount = 0;
+    $unknownHoursCount = 0;
+
+    foreach ($rows as $row) {
+        $facilityId = (string) ($row['facility_id'] ?? '');
+        $facilityName = (string) ($row['facility_name'] ?? '');
+        $capacity = max(0, (int) ($row['capacity'] ?? 0));
+        $currentRate = max(0.0, min(1.0, (float) ($row['occupancy_rate'] ?? 0)));
+
+        $operatingMeta = facility_operating_meta($row);
+        if ($operatingMeta['is_open_24_7'] === 1) {
+            $open247Count++;
+        } elseif ($operatingMeta['is_open_24_7'] === 0) {
+            $limitedHoursCount++;
+        } else {
+            $unknownHoursCount++;
+        }
+
+        $currentForecast = facility_predict_window(
+            $facilityId,
+            $capacity,
+            $currentRate,
+            (int) ($windows['current']['hour'] ?? 0),
+            (int) ($windows['current']['is_weekend'] ?? 0),
+            $facilityHourMap,
+            $facilityHourAnyMap,
+            $globalHourly,
+            $operatingMeta
+        );
+        $nextForecast = facility_predict_window(
+            $facilityId,
+            $capacity,
+            $currentRate,
+            (int) ($windows['next']['hour'] ?? 0),
+            (int) ($windows['next']['is_weekend'] ?? 0),
+            $facilityHourMap,
+            $facilityHourAnyMap,
+            $globalHourly,
+            $operatingMeta
+        );
+
+        $currentAvailableTotal += (int) ($currentForecast['predicted_available'] ?? 0);
+        $nextAvailableTotal += (int) ($nextForecast['predicted_available'] ?? 0);
+
+        $predictions[$facilityId] = [
+            'facility_id' => $facilityId,
+            'facility_name' => $facilityName,
+            'is_open_24_7' => $operatingMeta['is_open_24_7'],
+            'operating_hours_note' => $operatingMeta['note'],
+            'current_window' => $currentForecast,
+            'next_window' => $nextForecast,
+        ];
+    }
+
+    return [
+        'windows' => [
+            'timezone' => (string) ($windows['timezone'] ?? 'Australia/Sydney'),
+            'now_label' => (string) ($windows['now_label'] ?? ''),
+            'current_until_label' => (string) ($windows['current_until_label'] ?? 'Forecast later this hour (to end of current hour)'),
+            'current_label' => (string) (($windows['current']['label'] ?? 'Current hour')),
+            'next_label' => (string) (($windows['next']['label'] ?? 'Next hour')),
+        ],
+        'predictions' => $predictions,
+        'summary' => [
+            'current_window_available_total' => $currentAvailableTotal,
+            'next_window_available_total' => $nextAvailableTotal,
+            'open_24_7_count' => $open247Count,
+            'limited_hours_count' => $limitedHoursCount,
+            'unknown_hours_count' => $unknownHoursCount,
+        ],
+    ];
+}
+
+function facility_operating_meta(array $row): array
+{
+    $facilityId = trim((string) ($row['facility_id'] ?? ''));
+    $override = facility_override_hours($facilityId);
+    if (is_array($override)) {
+        $label = $override['is_open_24_7'] === 1
+            ? 'Open 24/7'
+            : ((string) $override['hours'] !== '' ? (string) $override['hours'] : 'Limited hours');
+
+        return [
+            'is_open_24_7' => $override['is_open_24_7'],
+            'note' => $label,
+        ];
+    }
+
+    $operatingHoursRaw = isset($row['operating_hours_json']) && is_string($row['operating_hours_json'])
+        ? trim($row['operating_hours_json'])
+        : '';
+    $operatingHoursData = $operatingHoursRaw !== '' ? json_decode($operatingHoursRaw, true) : null;
+    $hoursText = is_array($operatingHoursData) ? trim((string) ($operatingHoursData['source_value'] ?? '')) : '';
+    $hoursSource = is_array($operatingHoursData) ? trim((string) ($operatingHoursData['source'] ?? 'nsw_api')) : 'nsw_api';
+
+    $isOpen247 = null;
+    if (array_key_exists('is_open_24_7', $row) && $row['is_open_24_7'] !== null) {
+        $isOpen247 = (int) $row['is_open_24_7'] === 1 ? 1 : 0;
+    }
+
+    if ($isOpen247 === null && $hoursText !== '') {
+        $isOpen247 = operating_hours_text_is_24_7($hoursText) ? 1 : 0;
+    }
+
+    $sourceLabel = $hoursSource === 'osm_overpass' ? 'OSM/Overpass' : 'NSW API';
+
+    if ($isOpen247 === 1) {
+        $note = $hoursText !== ''
+            ? sprintf('Open 24/7 (%s: %s)', $sourceLabel, $hoursText)
+            : sprintf('Open 24/7 (reported by %s)', $sourceLabel);
+        return [
+            'is_open_24_7' => 1,
+            'note' => $note,
+        ];
+    }
+
+    if ($isOpen247 === 0) {
+        $note = $hoursText !== ''
+            ? sprintf('Hours: %s (%s)', $hoursText, $sourceLabel)
+            : sprintf('Not 24/7 (reported by %s)', $sourceLabel);
+        return [
+            'is_open_24_7' => 0,
+            'note' => $note,
+        ];
+    }
+
+    return [
+        'is_open_24_7' => null,
+        'note' => 'Open now (live telemetry active); official opening hours are not published',
+    ];
+}
+
+function facility_predict_window(
+    string $facilityId,
+    int $capacity,
+    float $currentRate,
+    int $targetHour,
+    int $isWeekend,
+    array $facilityHourMap,
+    array $facilityHourAnyMap,
+    array $globalHourly,
+    array $operatingMeta
+): array {
+    $specificKey = $facilityId . '|' . $targetHour . '|' . $isWeekend;
+    $hourKey = $facilityId . '|' . $targetHour;
+
+    $hourRate = $facilityHourMap[$specificKey] ?? $facilityHourAnyMap[$hourKey] ?? null;
+    $globalRate = $globalHourly[$targetHour] ?? $currentRate;
+
+    if ($hourRate === null) {
+        $predictedRate = max(0.0, min(1.0, $currentRate));
+    } else {
+        $predictedRate = (0.55 * (float) $hourRate) + (0.35 * $currentRate) + (0.10 * $globalRate);
+        $predictedRate = max(0.0, min(1.0, $predictedRate));
+    }
+
+    $predictedOccupied = $capacity > 0 ? (int) round($predictedRate * $capacity) : 0;
+    $predictedOccupied = max(0, min($capacity, $predictedOccupied));
+    $predictedAvailable = max(0, $capacity - $predictedOccupied);
+
+    return [
+        'hour' => $targetHour,
+        'predicted_occupancy_rate' => $predictedRate,
+        'predicted_occupied' => $predictedOccupied,
+        'predicted_available' => $predictedAvailable,
+        'predicted_class' => occupancy_availability_class($predictedAvailable, $predictedRate),
+        'is_open_24_7' => $operatingMeta['is_open_24_7'],
+        'hours_note' => $operatingMeta['note'],
+    ];
 }
 
 function top_latest_facilities(int $limit = 8): array
@@ -295,7 +628,7 @@ function facility_summary(string $facilityId): ?array
     $innerCondition = snapshot_source_condition();
 
     $sql = "
-        SELECT f.facility_id, f.facility_name, f.latitude, f.longitude, f.capacity,
+        SELECT f.facility_id, f.facility_name, f.latitude, f.longitude, f.capacity, f.is_open_24_7, f.operating_hours_json,
                s.recorded_at, s.occupied, s.available, s.occupancy_rate, s.availability_class
         FROM parking_facilities f
         INNER JOIN occupancy_snapshots s ON s.facility_id = f.facility_id AND {$outerCondition}

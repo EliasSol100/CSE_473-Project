@@ -7,9 +7,13 @@ const LIVE_COLLECTOR_DETAIL_URL_TEMPLATE = LIVE_COLLECTOR_BASE_URL . '/carpark?f
 const LIVE_COLLECTOR_DEFAULT_INTERVAL_SECONDS = 10;
 const LIVE_COLLECTOR_DEFAULT_TIMEOUT_SECONDS = 20;
 const LIVE_COLLECTOR_DEFAULT_MAX_PARALLEL = 10;
+const LIVE_COLLECTOR_OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+const LIVE_COLLECTOR_HOURS_ENRICH_BUDGET = 0;
+const LIVE_COLLECTOR_HOURS_RETRY_SECONDS = 21600;
 const LIVE_COLLECTOR_STATE_FILE = __DIR__ . '/../logs/live_collector_state.json';
 const LIVE_COLLECTOR_LOCK_FILE = __DIR__ . '/../logs/live_collector.lock';
 const LIVE_COLLECTOR_LOG_FILE = __DIR__ . '/../logs/live_collector_php.log';
+const LIVE_COLLECTOR_HOURS_CACHE_FILE = __DIR__ . '/../logs/live_collector_hours_cache.json';
 
 function live_collector_run(bool $force = false): array
 {
@@ -46,6 +50,9 @@ function live_collector_run(bool $force = false): array
             $items = [];
             $failedFacilities = 0;
             $skippedFacilities = 0;
+            $hoursCache = live_collector_read_hours_cache();
+            $hoursCacheChanged = false;
+            $hoursEnrichBudget = (int) ($config['hours_enrich_budget'] ?? LIVE_COLLECTOR_HOURS_ENRICH_BUDGET);
 
             foreach ($detailResults as $detailResult) {
                 if (($detailResult['status_code'] ?? 0) === 404) {
@@ -67,7 +74,39 @@ function live_collector_run(bool $force = false): array
                     continue;
                 }
 
+                $item = live_collector_apply_cached_hours($item, $hoursCache);
+                if (($item['is_open_24_7'] ?? null) === null && $hoursEnrichBudget > 0 && live_collector_should_attempt_hours_enrichment($item, $hoursCache, $config)) {
+                    $enriched = live_collector_fetch_overpass_operating_hours($item, $config);
+                    if (is_array($enriched)) {
+                        $item['is_open_24_7'] = $enriched['is_open_24_7'] ?? null;
+                        $item['operating_hours_json'] = $enriched['operating_hours_json'] ?? null;
+                        $hoursCache[(string) ($item['facility_id'] ?? '')] = [
+                            'is_open_24_7' => $item['is_open_24_7'],
+                            'operating_hours_json' => $item['operating_hours_json'],
+                            'checked_at' => gmdate('c'),
+                        ];
+                        $hoursCacheChanged = true;
+                    } else {
+                        $facilityIdForCache = (string) ($item['facility_id'] ?? '');
+                        if ($facilityIdForCache !== '') {
+                            $previousMisses = (int) ($hoursCache[$facilityIdForCache]['miss_count'] ?? 0);
+                            $hoursCache[$facilityIdForCache] = [
+                                'is_open_24_7' => null,
+                                'operating_hours_json' => null,
+                                'checked_at' => gmdate('c'),
+                                'miss_count' => $previousMisses + 1,
+                            ];
+                            $hoursCacheChanged = true;
+                        }
+                    }
+                    $hoursEnrichBudget--;
+                }
+
                 $items[] = $item;
+            }
+
+            if ($hoursCacheChanged) {
+                live_collector_write_hours_cache($hoursCache);
             }
 
             $persistResult = live_collector_persist_items($items);
@@ -173,6 +212,9 @@ function live_collector_config(): array
         'interval_seconds' => max(10, live_collector_env_int('DASHBOARD_COLLECT_INTERVAL_SECONDS', LIVE_COLLECTOR_DEFAULT_INTERVAL_SECONDS)),
         'timeout_seconds' => max(5, live_collector_env_int('DASHBOARD_REQUEST_TIMEOUT_SECONDS', LIVE_COLLECTOR_DEFAULT_TIMEOUT_SECONDS)),
         'max_parallel' => max(1, live_collector_env_int('DASHBOARD_MAX_PARALLEL_REQUESTS', LIVE_COLLECTOR_DEFAULT_MAX_PARALLEL)),
+        'hours_enrich_budget' => max(0, live_collector_env_int('DASHBOARD_HOURS_ENRICH_BUDGET', LIVE_COLLECTOR_HOURS_ENRICH_BUDGET)),
+        'hours_retry_seconds' => max(300, live_collector_env_int('DASHBOARD_HOURS_RETRY_SECONDS', LIVE_COLLECTOR_HOURS_RETRY_SECONDS)),
+        'overpass_url' => LIVE_COLLECTOR_OVERPASS_URL,
     ];
 
     return $config;
@@ -521,6 +563,7 @@ function live_collector_extract_fields(array $payload, ?string $fallbackName = n
         : [];
     $latitude = live_collector_parse_float($location['latitude'] ?? null);
     $longitude = live_collector_parse_float($location['longitude'] ?? null);
+    $operatingHoursMeta = live_collector_extract_operating_hours($payload);
 
     if ($facilityId === '' || $capacity === null || $occupied === null) {
         return null;
@@ -547,7 +590,301 @@ function live_collector_extract_fields(array $payload, ?string $fallbackName = n
         'month' => (int) $observedAt->format('n'),
         'latitude' => $latitude,
         'longitude' => $longitude,
+        'is_open_24_7' => $operatingHoursMeta['is_open_24_7'],
+        'operating_hours_json' => $operatingHoursMeta['operating_hours_json'],
     ];
+}
+
+function live_collector_extract_operating_hours(array $payload): array
+{
+    $candidate = null;
+    $candidateKey = null;
+
+    foreach (['opening_hours', 'openingHours', 'operating_hours', 'operatingHours', 'hours', 'opening'] as $key) {
+        if (!array_key_exists($key, $payload)) {
+            continue;
+        }
+
+        $value = $payload[$key];
+        if ($value === null || $value === '') {
+            continue;
+        }
+
+        $candidate = $value;
+        $candidateKey = $key;
+        break;
+    }
+
+    if ($candidate === null) {
+        return [
+            'is_open_24_7' => null,
+            'operating_hours_json' => null,
+        ];
+    }
+
+    $isOpen247 = live_collector_detect_24_7($candidate) ? 1 : 0;
+    $normalized = [
+        'source_key' => $candidateKey,
+        'source_value' => $candidate,
+    ];
+
+    $encoded = json_encode($normalized, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if (!is_string($encoded) || $encoded === '') {
+        $encoded = null;
+    }
+
+    return [
+        'is_open_24_7' => $isOpen247,
+        'operating_hours_json' => $encoded,
+    ];
+}
+
+function live_collector_detect_24_7($value): bool
+{
+    if (is_array($value)) {
+        foreach ($value as $item) {
+            if (live_collector_detect_24_7($item)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    if (!is_scalar($value)) {
+        return false;
+    }
+
+    $text = strtolower((string) $value);
+    $text = preg_replace('/\s+/', ' ', $text) ?? $text;
+
+    return str_contains($text, '24/7')
+        || str_contains($text, '24 7')
+        || str_contains($text, '24 hours')
+        || str_contains($text, 'open all day')
+        || str_contains($text, 'always open');
+}
+
+function live_collector_read_hours_cache(): array
+{
+    if (!is_file(LIVE_COLLECTOR_HOURS_CACHE_FILE)) {
+        return [];
+    }
+
+    $contents = @file_get_contents(LIVE_COLLECTOR_HOURS_CACHE_FILE);
+    if (!is_string($contents) || $contents === '') {
+        return [];
+    }
+
+    $decoded = json_decode($contents, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+function live_collector_write_hours_cache(array $cache): void
+{
+    live_collector_ensure_logs_dir();
+    @file_put_contents(
+        LIVE_COLLECTOR_HOURS_CACHE_FILE,
+        json_encode($cache, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+    );
+}
+
+function live_collector_apply_cached_hours(array $item, array $hoursCache): array
+{
+    $facilityId = (string) ($item['facility_id'] ?? '');
+    if ($facilityId === '' || !isset($hoursCache[$facilityId]) || !is_array($hoursCache[$facilityId])) {
+        return $item;
+    }
+
+    $cached = $hoursCache[$facilityId];
+    if (($item['is_open_24_7'] ?? null) === null && array_key_exists('is_open_24_7', $cached)) {
+        $item['is_open_24_7'] = $cached['is_open_24_7'];
+    }
+    if (($item['operating_hours_json'] ?? null) === null && isset($cached['operating_hours_json']) && is_string($cached['operating_hours_json'])) {
+        $item['operating_hours_json'] = $cached['operating_hours_json'];
+    }
+
+    return $item;
+}
+
+function live_collector_should_attempt_hours_enrichment(array $item, array $hoursCache, array $config): bool
+{
+    $facilityId = (string) ($item['facility_id'] ?? '');
+    if ($facilityId === '' || !isset($hoursCache[$facilityId]) || !is_array($hoursCache[$facilityId])) {
+        return true;
+    }
+
+    $cached = $hoursCache[$facilityId];
+    $cachedHours = trim((string) ($cached['operating_hours_json'] ?? ''));
+    if ($cachedHours !== '') {
+        return false;
+    }
+
+    $checkedAt = trim((string) ($cached['checked_at'] ?? ''));
+    if ($checkedAt === '') {
+        return true;
+    }
+
+    try {
+        $checkedTs = (new DateTimeImmutable($checkedAt))->getTimestamp();
+    } catch (Throwable) {
+        return true;
+    }
+
+    $retrySeconds = max(300, (int) ($config['hours_retry_seconds'] ?? LIVE_COLLECTOR_HOURS_RETRY_SECONDS));
+    return (time() - $checkedTs) >= $retrySeconds;
+}
+
+function live_collector_fetch_overpass_operating_hours(array $item, array $config): ?array
+{
+    $latitude = live_collector_parse_float($item['latitude'] ?? null);
+    $longitude = live_collector_parse_float($item['longitude'] ?? null);
+    if ($latitude === null || $longitude === null) {
+        return null;
+    }
+
+    $query = sprintf(
+        '[out:json][timeout:20];(node(around:650,%.6F,%.6F)["amenity"="parking"];way(around:650,%.6F,%.6F)["amenity"="parking"];relation(around:650,%.6F,%.6F)["amenity"="parking"];node(around:650,%.6F,%.6F)["parking"="park_ride"];way(around:650,%.6F,%.6F)["parking"="park_ride"];relation(around:650,%.6F,%.6F)["parking"="park_ride"];);out tags center;',
+        $latitude,
+        $longitude,
+        $latitude,
+        $longitude,
+        $latitude,
+        $longitude,
+        $latitude,
+        $longitude,
+        $latitude,
+        $longitude,
+        $latitude,
+        $longitude
+    );
+
+    $url = (string) ($config['overpass_url'] ?? LIVE_COLLECTOR_OVERPASS_URL);
+    $handle = curl_init($url);
+    if ($handle === false) {
+        return null;
+    }
+
+    curl_setopt_array($handle, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => 'data=' . rawurlencode($query),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ]);
+
+    $body = curl_exec($handle);
+    $statusCode = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+    $error = curl_error($handle);
+    curl_close($handle);
+
+    if ($body === false || $error !== '' || $statusCode !== 200) {
+        return null;
+    }
+
+    $decoded = json_decode((string) $body, true);
+    if (!is_array($decoded)) {
+        return null;
+    }
+
+    $elements = is_array($decoded['elements'] ?? null) ? $decoded['elements'] : [];
+    $facilityName = strtolower(trim((string) ($item['facility_name'] ?? '')));
+    $facilityName = str_replace(['park&ride', 'park and ride', '-', '(', ')'], ' ', $facilityName);
+    $facilityTokens = array_values(array_filter(explode(' ', preg_replace('/\s+/', ' ', $facilityName) ?? '')));
+
+    $best = null;
+    $bestScore = -1000000.0;
+
+    foreach ($elements as $element) {
+        if (!is_array($element)) {
+            continue;
+        }
+        $tags = is_array($element['tags'] ?? null) ? $element['tags'] : [];
+        $openingHours = live_collector_extract_opening_hours_from_tags($tags);
+        if ($openingHours === '') {
+            continue;
+        }
+
+        $candidateName = strtolower(trim((string) ($tags['name'] ?? '')));
+        $candidateName = str_replace(['park&ride', 'park and ride', '-', '(', ')'], ' ', $candidateName);
+        $candidateTokens = array_values(array_filter(explode(' ', preg_replace('/\s+/', ' ', $candidateName) ?? '')));
+
+        $tokenMatches = 0;
+        foreach ($facilityTokens as $token) {
+            if ($token !== '' && in_array($token, $candidateTokens, true)) {
+                $tokenMatches++;
+            }
+        }
+
+        $pointLat = null;
+        $pointLon = null;
+        if (isset($element['lat'], $element['lon']) && is_numeric($element['lat']) && is_numeric($element['lon'])) {
+            $pointLat = (float) $element['lat'];
+            $pointLon = (float) $element['lon'];
+        } elseif (isset($element['center']) && is_array($element['center']) && is_numeric($element['center']['lat'] ?? null) && is_numeric($element['center']['lon'] ?? null)) {
+            $pointLat = (float) $element['center']['lat'];
+            $pointLon = (float) $element['center']['lon'];
+        }
+
+        $distancePenalty = 0.0;
+        if ($pointLat !== null && $pointLon !== null) {
+            $distancePenalty = live_collector_distance_meters($latitude, $longitude, $pointLat, $pointLon) / 20.0;
+        }
+
+        $score = ($tokenMatches * 20.0) - $distancePenalty;
+        if ($score > $bestScore) {
+            $bestScore = $score;
+            $best = [
+                'opening_hours' => $openingHours,
+                'name' => (string) ($tags['name'] ?? ''),
+            ];
+        }
+    }
+
+    if ($best !== null) {
+        $isOpen247 = live_collector_detect_24_7($best['opening_hours']) ? 1 : 0;
+        $encoded = json_encode([
+            'source_key' => 'opening_hours',
+            'source_value' => $best['opening_hours'],
+            'source' => 'osm_overpass',
+            'facility_match_name' => $best['name'],
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        return [
+            'is_open_24_7' => $isOpen247,
+            'operating_hours_json' => is_string($encoded) ? $encoded : null,
+        ];
+    }
+
+    return null;
+}
+
+function live_collector_extract_opening_hours_from_tags(array $tags): string
+{
+    foreach (['opening_hours', 'service_times', 'collection_times', 'opening_hours:covid19'] as $key) {
+        $value = trim((string) ($tags[$key] ?? ''));
+        if ($value !== '') {
+            return $value;
+        }
+    }
+
+    return '';
+}
+
+function live_collector_distance_meters(float $lat1, float $lon1, float $lat2, float $lon2): float
+{
+    $earthRadius = 6371000.0;
+    $dLat = deg2rad($lat2 - $lat1);
+    $dLon = deg2rad($lon2 - $lon1);
+    $a = sin($dLat / 2) * sin($dLat / 2)
+        + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon / 2) * sin($dLon / 2);
+    $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+    return $earthRadius * $c;
 }
 
 function live_collector_parse_int($value): ?int
@@ -659,13 +996,15 @@ function live_collector_persist_items(array $items): array
     $connection = db();
     $facilityStatement = $connection->prepare(
         "
-        INSERT INTO parking_facilities (facility_id, facility_name, latitude, longitude, capacity)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO parking_facilities (facility_id, facility_name, latitude, longitude, capacity, is_open_24_7, operating_hours_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
             facility_name = VALUES(facility_name),
             latitude = COALESCE(VALUES(latitude), latitude),
             longitude = COALESCE(VALUES(longitude), longitude),
-            capacity = COALESCE(VALUES(capacity), capacity)
+            capacity = COALESCE(VALUES(capacity), capacity),
+            is_open_24_7 = COALESCE(VALUES(is_open_24_7), is_open_24_7),
+            operating_hours_json = COALESCE(VALUES(operating_hours_json), operating_hours_json)
         "
     );
 
@@ -737,8 +1076,14 @@ function live_collector_upsert_facility(mysqli_stmt $statement, array $item): vo
     $latitude = $item['latitude'] === null ? null : sprintf('%.6F', (float) $item['latitude']);
     $longitude = $item['longitude'] === null ? null : sprintf('%.6F', (float) $item['longitude']);
     $capacity = (int) $item['capacity'];
+    $isOpen247 = array_key_exists('is_open_24_7', $item) && $item['is_open_24_7'] !== null
+        ? (int) $item['is_open_24_7']
+        : null;
+    $operatingHoursJson = isset($item['operating_hours_json']) && is_string($item['operating_hours_json'])
+        ? $item['operating_hours_json']
+        : null;
 
-    $statement->bind_param('ssssi', $facilityId, $facilityName, $latitude, $longitude, $capacity);
+    $statement->bind_param('ssssiss', $facilityId, $facilityName, $latitude, $longitude, $capacity, $isOpen247, $operatingHoursJson);
     if (!$statement->execute()) {
         throw new RuntimeException('Failed to upsert parking_facilities data: ' . $statement->error);
     }

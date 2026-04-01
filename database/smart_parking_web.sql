@@ -13,7 +13,9 @@ CREATE TABLE parking_facilities (
     facility_name VARCHAR(255) NOT NULL,
     latitude DECIMAL(10,6) NULL,
     longitude DECIMAL(10,6) NULL,
-    capacity INT NOT NULL
+    capacity INT NOT NULL,
+    is_open_24_7 TINYINT(1) NULL DEFAULT NULL,
+    operating_hours_json TEXT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE occupancy_snapshots (

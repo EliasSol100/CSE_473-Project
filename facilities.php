@@ -21,6 +21,9 @@ $visibleFacilities = $selectedFacilityId !== ''
     : $facilities;
 $summary = $facilitiesPayload['summary'];
 $selectedSummary = $facilitiesPayload['selected_summary'];
+$selectedPrediction = is_array($facilitiesPayload['selected_prediction'] ?? null) ? $facilitiesPayload['selected_prediction'] : null;
+$predictionWindows = is_array($facilitiesPayload['prediction_windows'] ?? null) ? $facilitiesPayload['prediction_windows'] : [];
+$hourlyPredictions = is_array($facilitiesPayload['hourly_predictions'] ?? null) ? $facilitiesPayload['hourly_predictions'] : [];
 $options = facility_options();
 $facilitiesSyncUrl = 'api/facilities_summary.php';
 
@@ -67,10 +70,13 @@ require_once __DIR__ . '/includes/header.php';
 
         <div class="table-wrap">
             <table>
-                <thead><tr><th>Facility ID</th><th>Facility Name</th><th>Capacity</th><th>Occupied</th><th>Available</th><th>Occupancy</th><th>Status</th></tr></thead>
+                <thead><tr><th>Facility ID</th><th>Facility Name</th><th>Capacity</th><th>Occupied</th><th>Available</th><th>Occupancy</th><th>Status</th><th><?= h((string) ($predictionWindows['current_until_label'] ?? 'Forecast later this hour (to end of current hour)')) ?></th><th>Predicted <?= h((string) ($predictionWindows['next_label'] ?? 'Next')) ?></th><th>Operating Hours</th></tr></thead>
                 <tbody data-facilities-table-body>
                     <?php foreach ($visibleFacilities as $row): ?>
                         <?php $percent = (float) $row['occupancy_rate'] * 100; ?>
+                        <?php $prediction = is_array($hourlyPredictions[$row['facility_id']] ?? null) ? $hourlyPredictions[$row['facility_id']] : null; ?>
+                        <?php $currentPred = is_array($prediction['current_window'] ?? null) ? $prediction['current_window'] : null; ?>
+                        <?php $nextPred = is_array($prediction['next_window'] ?? null) ? $prediction['next_window'] : null; ?>
                         <tr>
                             <td><?= h($row['facility_id']) ?></td>
                             <td><a href="facilities.php?facility_id=<?= urlencode($row['facility_id']) ?>"><?= h($row['facility_name']) ?></a></td>
@@ -79,6 +85,23 @@ require_once __DIR__ . '/includes/header.php';
                             <td><?= h(format_number($row['available'])) ?></td>
                             <td><strong><?= h(format_percentage($percent)) ?></strong><div class="progress" style="margin-top:8px;"><span style="width: <?= max(0, min(100, $percent)) ?>%"></span></div></td>
                             <td><span class="status-pill <?= h(availability_badge_class($row['availability_class'])) ?>"><?= h($row['availability_class']) ?></span></td>
+                            <td>
+                                <?php if ($currentPred): ?>
+                                    <strong><?= h(format_number($currentPred['predicted_available'] ?? 0)) ?> free</strong><br>
+                                    <span class="status-pill <?= h(availability_badge_class($currentPred['predicted_class'] ?? 'Available')) ?>"><?= h($currentPred['predicted_class'] ?? 'Available') ?></span>
+                                <?php else: ?>
+                                    <span class="muted">No forecast</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($nextPred): ?>
+                                    <strong><?= h(format_number($nextPred['predicted_available'] ?? 0)) ?> free</strong><br>
+                                    <span class="status-pill <?= h(availability_badge_class($nextPred['predicted_class'] ?? 'Available')) ?>"><?= h($nextPred['predicted_class'] ?? 'Available') ?></span>
+                                <?php else: ?>
+                                    <span class="muted">No forecast</span>
+                                <?php endif; ?>
+                            </td>
+                            <td><?= h($prediction['operating_hours_note'] ?? 'Operating hours not provided') ?></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -100,6 +123,11 @@ require_once __DIR__ . '/includes/header.php';
                         <div class="stat-item"><span>Occupied</span><strong><?= h(format_number($selectedSummary['occupied'])) ?></strong></div>
                         <div class="stat-item"><span>Available</span><strong><?= h(format_number($selectedSummary['available'])) ?></strong></div>
                         <div class="stat-item"><span>Status</span><strong><span class="status-pill <?= h(availability_badge_class($selectedSummary['availability_class'])) ?>"><?= h($selectedSummary['availability_class']) ?></span></strong></div>
+                            <?php if ($selectedPrediction): ?>
+                                <div class="stat-item"><span><?= h((string) ($predictionWindows['current_until_label'] ?? 'Forecast later this hour (to end of current hour)')) ?></span><strong><?= h(format_number($selectedPrediction['current_window']['predicted_available'] ?? 0)) ?> free (<?= h($selectedPrediction['current_window']['predicted_class'] ?? 'Available') ?>)</strong></div>
+                                <div class="stat-item"><span>Predicted <?= h((string) ($predictionWindows['next_label'] ?? 'Next')) ?></span><strong><?= h(format_number($selectedPrediction['next_window']['predicted_available'] ?? 0)) ?> free (<?= h($selectedPrediction['next_window']['predicted_class'] ?? 'Available') ?>)</strong></div>
+                                <div class="stat-item"><span>Operating hours</span><strong><?= h($selectedPrediction['operating_hours_note'] ?? 'Operating hours not provided') ?></strong></div>
+                            <?php endif; ?>
                     </div>
                 </article>
                 <article class="chart-card">

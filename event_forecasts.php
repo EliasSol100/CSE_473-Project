@@ -23,6 +23,7 @@ $featuredForecast = $selectedEvent['featured_forecast'] ?? null;
 $featuredPercent = $featuredForecast ? ((float) $featuredForecast['predicted_rate']) * 100 : 0;
 $topImpactLabels = $eventsPayload['top_impact_labels'];
 $topImpactValues = $eventsPayload['top_impact_values'];
+$topImpactMetricLabel = (string) ($eventsPayload['top_impact_metric_label'] ?? 'Projected occupancy %');
 $hasEvents = $events !== [];
 $eventsSyncUrl = 'api/events_summary.php';
 $eventsOverviewUrl = $selectedEventId !== ''
@@ -36,7 +37,7 @@ $nearbyRadiusLabel = $selectedEvent
     <div class="section-title">
         <div>
             <h2>Event forecast</h2>
-            <p>Detailed event spillover, featured-facility pressure, and full parking forecasts for the selected Sydney event.</p>
+            <p>Show nearby parking within 10 km and the closest facility now. Event-based prediction appears only on the event day.</p>
         </div>
         <div class="tag-row section-tags">
             <span class="tag" data-events-window>Forecast window: <?= h($eventsPayload['window_label']) ?></span>
@@ -53,6 +54,7 @@ $nearbyRadiusLabel = $selectedEvent
         <div class="tag-row" style="margin-top:0;">
             <span class="tag">Selected event: <span data-events-selected-title><?= h($selectedEvent['title'] ?? 'None') ?></span></span>
             <span class="tag tag-category">Selected type: <span data-events-selected-category><?= h($selectedEvent['active_category_label'] ?? $selectedEvent['category_label'] ?? 'Event') ?></span></span>
+            <span class="tag">Timing: <span data-events-selected-timing><?= h($selectedEvent['timing_label'] ?? 'Upcoming event') ?></span></span>
             <span class="tag">Tracked events: <span data-events-tracked-count><?= h(format_number(count($events))) ?></span></span>
         </div>
     </section>
@@ -74,12 +76,16 @@ $nearbyRadiusLabel = $selectedEvent
             <article class="notice">
                 <h3>Pressure snapshot</h3>
                 <div class="metric" data-events-pressure-count><?= h(format_number(($selectedEvent['status_counts']['full'] ?? 0) + ($selectedEvent['status_counts']['limited'] ?? 0))) ?></div>
-                <p class="muted" data-events-pressure-copy><?= h(format_number($selectedEvent['status_counts']['full'] ?? 0)) ?> full and <?= h(format_number($selectedEvent['status_counts']['limited'] ?? 0)) ?> limited sites are projected under the selected event.</p>
+                <p class="muted" data-events-pressure-copy><?= ($selectedEvent['is_prediction_day'] ?? false)
+                        ? h(format_number($selectedEvent['status_counts']['full'] ?? 0)) . ' full and ' . h(format_number($selectedEvent['status_counts']['limited'] ?? 0)) . ' limited sites are projected under the selected event.'
+                        : h(format_number($selectedEvent['status_counts']['full'] ?? 0)) . ' full and ' . h(format_number($selectedEvent['status_counts']['limited'] ?? 0)) . ' limited nearby sites are currently observed.' ?></p>
             </article>
             <article class="notice">
                 <h3>Featured facility spaces left</h3>
-                <div class="metric" data-events-featured-available><?= h(format_number($featuredForecast['predicted_available'] ?? 0)) ?></div>
-                <p class="muted">Live forecast for the highlighted facility most relevant to the selected event.</p>
+                <div class="metric" data-events-featured-available><?= h(format_number($featuredForecast['current_available'] ?? 0)) ?></div>
+                <p class="muted" data-events-featured-copy><?= h(($selectedEvent['is_prediction_day'] ?? false)
+                        ? 'Closest highlighted facility current availability. Event-day prediction is active.'
+                        : 'Closest highlighted facility current availability. Prediction becomes available on the event day.') ?></p>
             </article>
         </section>
 
@@ -87,8 +93,11 @@ $nearbyRadiusLabel = $selectedEvent
             <article class="panel" data-events-selected-panel>
                 <?php if ($selectedEvent): ?>
                     <h3><?= h($selectedEvent['title']) ?></h3>
-                    <p class="muted"><?= h($selectedEvent['starts_at_display']) ?> to <?= h($selectedEvent['ends_at_display']) ?></p>
+                    <p class="muted" style="margin-top:8px;"><strong><?= h($selectedEvent['timing_label'] ?? 'Upcoming event') ?>:</strong> <?= h($selectedEvent['timing_note'] ?? 'Forecasts are based on live data and historical occupancy patterns.') ?></p>
+                    <p class="muted" style="margin-top:6px;"><strong>Prediction:</strong> <?= h($selectedEvent['prediction_note'] ?? 'Prediction will be available on the current day of the event.') ?></p>
                     <div class="stat-list" style="margin-top:18px;">
+                        <div class="stat-item"><span>Starts</span><strong><?= h($selectedEvent['starts_at_display']) ?></strong></div>
+                        <div class="stat-item"><span>Ends</span><strong><?= h($selectedEvent['ends_at_display']) ?></strong></div>
                         <div class="stat-item"><span>Event type</span><strong><?= h($selectedEvent['active_category_label'] ?? $selectedEvent['category_label'] ?? 'Event') ?></strong></div>
                         <div class="stat-item"><span>Venue</span><strong><?= h($selectedEvent['venue_name']) ?>, <?= h($selectedEvent['venue_area']) ?></strong></div>
                         <div class="stat-item"><span>Address</span><strong><?= h($selectedEvent['venue_address']) ?></strong></div>
@@ -104,17 +113,21 @@ $nearbyRadiusLabel = $selectedEvent
             </article>
 
             <article class="chart-card forecast-feature" data-events-featured-panel>
-                <p class="forecast-kicker"><?= h($eventsPayload['featured_title']) ?></p>
+                <p class="forecast-kicker"><?= h(($selectedEvent['closest_forecast']['facility_name'] ?? '') !== '' ? 'Closest facility to the venue' : $eventsPayload['featured_title']) ?></p>
                 <?php if ($featuredForecast): ?>
                     <h3><?= h($featuredForecast['facility_name']) ?></h3>
-                    <p class="muted"><?= h($selectedEvent['featured_reason'] ?? 'This site is forecast as one of the highest-pressure locations for the selected event.') ?></p>
-                    <div class="metric"><?= h(format_number($featuredForecast['predicted_available'])) ?> spaces left</div>
-                    <div class="progress"><span style="width: <?= max(0, min(100, $featuredPercent)) ?>%"></span></div>
+                    <p class="muted"><?= h(($selectedEvent['is_prediction_day'] ?? false)
+                        ? 'Closest facility within 10 km. Showing current availability, with event-day prediction available below.'
+                        : 'Closest facility within 10 km. Showing current availability only until the event day.') ?></p>
+                    <div class="metric"><?= h(format_number($featuredForecast['current_available'] ?? 0)) ?> spaces now</div>
+                    <div class="progress"><span style="width: <?= max(0, min(100, ((float) ($featuredForecast['current_rate'] ?? 0) * 100))) ?>%"></span></div>
                     <div class="stat-list" style="margin-top:18px;">
-                        <div class="stat-item"><span>Baseline occupied</span><strong><?= h(format_number($featuredForecast['baseline_occupied'])) ?></strong></div>
-                        <div class="stat-item"><span>Event lift</span><strong>+<?= h(format_number($featuredForecast['event_lift'])) ?></strong></div>
-                        <div class="stat-item"><span>Predicted occupied</span><strong><?= h(format_number($featuredForecast['predicted_occupied'])) ?></strong></div>
-                        <div class="stat-item"><span>Predicted status</span><strong><span class="status-pill <?= h(availability_badge_class($featuredForecast['predicted_status'])) ?>"><?= h($featuredForecast['predicted_status']) ?></span></strong></div>
+                        <div class="stat-item"><span>Distance from venue</span><strong><?= h(number_format((float) ($featuredForecast['distance_km'] ?? 0), 1)) ?> km</strong></div>
+                    <div class="stat-item"><span>Current occupied</span><strong><?= h(format_number($featuredForecast['current_occupied'] ?? 0)) ?></strong></div>
+                    <div class="stat-item"><span>Current status</span><strong><span class="status-pill <?= h(availability_badge_class((string) ($featuredForecast['current_status'] ?? 'Available'))) ?>"><?= h($featuredForecast['current_status'] ?? 'Available') ?></span></strong></div>
+                    <?php if (!($selectedEvent['is_prediction_day'] ?? false)): ?>
+                        <div class="stat-item"><span>Event-day prediction</span><strong>Available on event day</strong></div>
+                    <?php endif; ?>
                     </div>
                 <?php else: ?>
                     <h3>No highlighted facility</h3>
@@ -123,17 +136,21 @@ $nearbyRadiusLabel = $selectedEvent
             </article>
         </section>
 
-        <section class="chart-card" style="margin-bottom:24px;">
+        <section class="chart-card" style="margin-bottom:24px;" data-impact-chart-card<?= ($selectedEvent['is_prediction_day'] ?? false) ? '' : ' hidden' ?>>
             <h3>Most impacted facilities for the selected event</h3>
-            <p class="muted">The chart below ranks the eight sites receiving the biggest event-driven parking lift, then shows their projected occupancy percentage.</p>
+            <p class="muted" data-impact-chart-copy>The chart below ranks the eight sites receiving the biggest event-driven parking lift, then shows their projected occupancy percentage.</p>
             <canvas id="eventImpactChart" height="160"></canvas>
+        </section>
+        <section class="notice" style="margin-bottom:24px;" data-impact-chart-unavailable<?= ($selectedEvent['is_prediction_day'] ?? false) ? ' hidden' : '' ?>>
+            <h3>Most impacted facilities</h3>
+            <p class="muted">This prediction chart is available on the event day only.</p>
         </section>
 
         <section class="table-card" data-facility-search-scope>
             <div class="section-title">
                 <div>
                     <h2>Nearby facility forecasts for the selected event</h2>
-                    <p data-events-table-description>Every row below shows a tracked facility within roughly <?= h($nearbyRadiusLabel) ?> km of the venue.</p>
+                    <p data-events-table-description>Every row below shows a tracked facility within roughly <?= h($nearbyRadiusLabel) ?> km of the venue. Event-based prediction appears only on the event day.</p>
                 </div>
                 <p class="muted" style="margin:0;" data-events-table-count>Showing <?= h(format_number(count($selectedEvent['nearby_ranked'] ?? []))) ?> nearby facilities</p>
             </div>
@@ -148,6 +165,7 @@ $nearbyRadiusLabel = $selectedEvent
                     <option value="available">Available only</option>
                 </select>
                 <select class="select-field" data-events-forecast-sort>
+                    <option value="distance_asc">Closest first</option>
                     <option value="impact_desc">Biggest event lift</option>
                     <option value="occupancy_desc">Highest occupancy</option>
                     <option value="available_asc">Fewest spaces left</option>
@@ -157,21 +175,57 @@ $nearbyRadiusLabel = $selectedEvent
 
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Facility</th><th>Capacity</th><th>Baseline Occupied</th><th>Event Lift</th><th>Predicted Available</th><th>Predicted Occupancy</th><th>Status</th><th>Details</th></tr></thead>
+                    <thead><tr><th>Facility</th><th>Distance</th><th>Capacity</th><th>Current Available</th><th>+1h</th><th>+3h</th><th>+6h</th><th>+12h</th><th>Event Lift (event day only)</th><th data-occ-header><?= ($selectedEvent['is_prediction_day'] ?? false) ? 'Current &amp; Predicted Occupancy' : 'Current Occupancy' ?></th><th>Status</th><th>Details</th></tr></thead>
                     <tbody data-events-table-body>
                         <?php if (($selectedEvent['nearby_ranked'] ?? []) === []): ?>
-                            <tr><td colspan="8" class="empty-state">No tracked parking facilities are within <?= h($nearbyRadiusLabel) ?> km of this event venue.</td></tr>
+                            <tr><td colspan="12" class="empty-state">No tracked parking facilities are within <?= h($nearbyRadiusLabel) ?> km of this event venue.</td></tr>
                         <?php else: ?>
                             <?php foreach (($selectedEvent['nearby_ranked'] ?? []) as $row): ?>
-                                <?php $predictedPercent = ((float) $row['predicted_rate']) * 100; ?>
+                                <?php
+                                    $currentPercent = ((float) ($row['current_rate'] ?? 0)) * 100;
+                                    if ($selectedEvent['is_prediction_day'] ?? false) {
+                                        $_cap = max(1, (int) ($row['capacity'] ?? 1));
+                                        $h1Occ = round(($_cap - (int) ($row['horizon_1h_available'] ?? 0)) / $_cap * 100, 1);
+                                        $h3Occ = round(($_cap - (int) ($row['horizon_3h_available'] ?? 0)) / $_cap * 100, 1);
+                                        $h6Occ = round(($_cap - (int) ($row['horizon_6h_available'] ?? 0)) / $_cap * 100, 1);
+                                        $h12Occ = round(($_cap - (int) ($row['horizon_12h_available'] ?? 0)) / $_cap * 100, 1);
+                                    }
+                                ?>
                                 <tr data-facility-row data-search="<?= h(strtolower($row['facility_id'] . ' ' . $row['facility_name'] . ' ' . $row['predicted_status'])) ?>">
-                                    <td><?= h($row['facility_name']) ?></td>
+                                    <td>
+                                        <div class="facility-cell">
+                                            <span class="facility-name"><?= h($row['facility_name']) ?></span>
+                                            <?php if (!empty($row['is_closest'])): ?>
+                                                <span class="tag closest-badge">Closest</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
+                                    <td><?= h(number_format((float) ($row['distance_km'] ?? 0), 1)) ?> km</td>
                                     <td><?= h(format_number($row['capacity'])) ?></td>
-                                    <td><?= h(format_number($row['baseline_occupied'])) ?></td>
-                                    <td><strong>+<?= h(format_number($row['event_lift'])) ?></strong></td>
-                                    <td><?= h(format_number($row['predicted_available'])) ?></td>
-                                    <td><strong><?= h(format_percentage($predictedPercent)) ?></strong><div class="progress" style="margin-top:8px;"><span style="width: <?= max(0, min(100, $predictedPercent)) ?>%"></span></div></td>
-                                    <td><span class="status-pill <?= h(availability_badge_class($row['predicted_status'])) ?>"><?= h($row['predicted_status']) ?></span></td>
+                                    <td><?= h(format_number($row['current_available'] ?? 0)) ?></td>
+                                    <td><?= ($selectedEvent['is_prediction_day'] ?? false) ? h(format_number($row['horizon_1h_available'] ?? 0)) : 'Event day' ?></td>
+                                    <td><?= ($selectedEvent['is_prediction_day'] ?? false) ? h(format_number($row['horizon_3h_available'] ?? 0)) : 'Event day' ?></td>
+                                    <td><?= ($selectedEvent['is_prediction_day'] ?? false) ? h(format_number($row['horizon_6h_available'] ?? 0)) : 'Event day' ?></td>
+                                    <td><?= ($selectedEvent['is_prediction_day'] ?? false) ? h(format_number($row['horizon_12h_available'] ?? 0)) : 'Event day' ?></td>
+                                    <td><?= ($selectedEvent['is_prediction_day'] ?? false) ? '<strong>+' . h(format_number($row['event_lift'])) . '</strong>' : 'Event day' ?></td>
+                                    <td>
+                                        <?php if ($selectedEvent['is_prediction_day'] ?? false): ?>
+                                            <small style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">Current</small>
+                                            <strong><?= h(format_percentage($currentPercent)) ?></strong>
+                                            <div class="progress" style="margin-top:4px;margin-bottom:8px;"><span style="width:<?= max(0, min(100, $currentPercent)) ?>%"></span></div>
+                                            <small style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Predicted</small>
+                                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;font-size:12px;">
+                                                <span>+1H: <strong><?= h(number_format($h1Occ, 1)) ?>%</strong></span>
+                                                <span>+3H: <strong><?= h(number_format($h3Occ, 1)) ?>%</strong></span>
+                                                <span>+6H: <strong><?= h(number_format($h6Occ, 1)) ?>%</strong></span>
+                                                <span>+12H: <strong><?= h(number_format($h12Occ, 1)) ?>%</strong></span>
+                                            </div>
+                                        <?php else: ?>
+                                            <strong><?= h(format_percentage($currentPercent)) ?></strong>
+                                            <div class="progress" style="margin-top:8px;"><span style="width:<?= max(0, min(100, $currentPercent)) ?>%"></span></div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><span class="status-pill <?= h(availability_badge_class((string) ((($selectedEvent['is_prediction_day'] ?? false) ? ($row['predicted_status'] ?? 'Available') : ($row['current_status'] ?? 'Available'))))) ?>"><?= h(($selectedEvent['is_prediction_day'] ?? false) ? ($row['predicted_status'] ?? 'Available') : ($row['current_status'] ?? 'Available')) ?></span></td>
                                     <td><a href="facilities.php?facility_id=<?= urlencode($row['facility_id']) ?>">View facility</a></td>
                                 </tr>
                             <?php endforeach; ?>
@@ -190,7 +244,7 @@ window.eventsCharts.impact = new Chart(document.getElementById('eventImpactChart
     data: {
         labels: <?= json_encode($topImpactLabels) ?>,
         datasets: [{
-            label: 'Projected occupancy %',
+            label: <?= json_encode($topImpactMetricLabel) ?>,
             data: <?= json_encode($topImpactValues) ?>,
             borderWidth: 0,
             borderRadius: 8,
@@ -200,7 +254,11 @@ window.eventsCharts.impact = new Chart(document.getElementById('eventImpactChart
     options: {
         indexAxis: 'y',
         responsive: true,
-        scales: { x: { beginAtZero: true, max: 100 } }
+        layout: { padding: { left: 14 } },
+        scales: {
+            y: { ticks: { font: { size: 9 }, padding: 8, autoSkip: false } },
+            x: { beginAtZero: true, max: 100 }
+        }
     }
 });
 </script>

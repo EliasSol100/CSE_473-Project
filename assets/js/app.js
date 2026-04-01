@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const renderEventsDistanceEmptyState = (radiusKm) => {
         const radiusLabel = formatDistanceKm(radiusKm);
-        return `<tr><td colspan="8" class="empty-state">No tracked parking facilities are within ${escapeHtml(radiusLabel)} km of this event venue.</td></tr>`;
+        return `<tr><td colspan="12" class="empty-state">No tracked parking facilities are within ${escapeHtml(radiusLabel)} km of this event venue.</td></tr>`;
     };
     const escapeHtml = (value) => String(value == null ? '' : value)
         .replace(/&/g, '&amp;')
@@ -172,7 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return `${String(Number(value) || 0).padStart(2, '0')}:00`;
     };
-    const updateChartData = (chart, labels, values) => {
+    const updateChartData = (chart, labels, values, datasetLabel = null) => {
         if (!chart) {
             return;
         }
@@ -180,6 +180,9 @@ document.addEventListener('DOMContentLoaded', () => {
         chart.data.labels = labels;
         if (chart.data.datasets[0]) {
             chart.data.datasets[0].data = values;
+            if (datasetLabel !== null) {
+                chart.data.datasets[0].label = String(datasetLabel || '');
+            }
         }
         chart.update();
     };
@@ -333,6 +336,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const hourly = Array.isArray(payload.hourly) ? payload.hourly : [];
         const distribution = Array.isArray(payload.distribution) ? payload.distribution : [];
         const latest = Array.isArray(payload.latest) ? payload.latest : [];
+        const predictionSummary = payload.prediction_summary && typeof payload.prediction_summary === 'object'
+            ? payload.prediction_summary
+            : {};
         const topLatest = topLatestFacilities(payload);
         const summaryFields = {
             lastRefresh: host.querySelector('[data-summary-last-refresh]'),
@@ -340,6 +346,10 @@ document.addEventListener('DOMContentLoaded', () => {
             occupied: host.querySelector('[data-summary-occupied]'),
             available: host.querySelector('[data-summary-available]'),
             average: host.querySelector('[data-summary-avg]'),
+            predictionCurrentAvailable: host.querySelector('[data-prediction-current-available]'),
+            predictionNextAvailable: host.querySelector('[data-prediction-next-available]'),
+            open247Count: host.querySelector('[data-prediction-open247]'),
+            limitedHoursCount: host.querySelector('[data-prediction-limited-hours]'),
             latestTableBody: host.querySelector('[data-latest-table-body]')
         };
 
@@ -357,6 +367,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (summaryFields.average) {
             summaryFields.average.textContent = formatPercentage(summary.avg_occupancy);
+        }
+        if (summaryFields.predictionCurrentAvailable) {
+            summaryFields.predictionCurrentAvailable.textContent = formatNumber(predictionSummary.current_window_available_total);
+        }
+        if (summaryFields.predictionNextAvailable) {
+            summaryFields.predictionNextAvailable.textContent = formatNumber(predictionSummary.next_window_available_total);
+        }
+        if (summaryFields.open247Count) {
+            summaryFields.open247Count.textContent = formatNumber(predictionSummary.open_24_7_count);
+        }
+        if (summaryFields.limitedHoursCount) {
+            summaryFields.limitedHoursCount.textContent = formatNumber(predictionSummary.limited_hours_count);
         }
 
         renderLatestTable(summaryFields.latestTableBody, latest);
@@ -382,14 +404,28 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     };
 
-    const renderFacilitiesTableRows = (facilities) => {
+    const renderFacilitiesTableRows = (facilities, payload) => {
         if (!Array.isArray(facilities) || facilities.length === 0) {
-            return '<tr><td colspan="7" class="empty-state">No facilities match the current filters.</td></tr>';
+            return '<tr><td colspan="10" class="empty-state">No facilities match the current filters.</td></tr>';
         }
+
+        const predictionMap = payload && typeof payload === 'object' && payload.hourly_predictions && typeof payload.hourly_predictions === 'object'
+            ? payload.hourly_predictions
+            : {};
 
         return facilities.map((row) => {
             const percent = Math.max(0, Math.min(100, (Number(row.occupancy_rate) || 0) * 100));
             const facilityId = encodeURIComponent(String(row.facility_id ?? ''));
+            const prediction = predictionMap[String(row.facility_id ?? '')] || {};
+            const currentWindow = prediction.current_window || null;
+            const nextWindow = prediction.next_window || null;
+            const currentHtml = currentWindow
+                ? `<strong>${escapeHtml(formatNumber(currentWindow.predicted_available))} free</strong><br><span class="status-pill ${escapeHtml(availabilityBadgeClass(currentWindow.predicted_class))}">${escapeHtml(currentWindow.predicted_class || 'Available')}</span>`
+                : '<span class="muted">No forecast</span>';
+            const nextHtml = nextWindow
+                ? `<strong>${escapeHtml(formatNumber(nextWindow.predicted_available))} free</strong><br><span class="status-pill ${escapeHtml(availabilityBadgeClass(nextWindow.predicted_class))}">${escapeHtml(nextWindow.predicted_class || 'Available')}</span>`
+                : '<span class="muted">No forecast</span>';
+            const operatingHoursNote = prediction.operating_hours_note || 'Operating hours not provided';
 
             return `
                 <tr>
@@ -400,6 +436,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>${escapeHtml(formatNumber(row.available))}</td>
                     <td><strong>${escapeHtml(formatPercentage(percent))}</strong><div class="progress" style="margin-top:8px;"><span style="width: ${percent}%"></span></div></td>
                     <td><span class="status-pill ${escapeHtml(availabilityBadgeClass(row.availability_class))}">${escapeHtml(row.availability_class ?? 'Available')}</span></td>
+                    <td>${currentHtml}</td>
+                    <td>${nextHtml}</td>
+                    <td>${escapeHtml(operatingHoursNote)}</td>
                 </tr>
             `;
         }).join('');
@@ -526,6 +565,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedSummary = payload.selected_summary && typeof payload.selected_summary === 'object'
             ? payload.selected_summary
             : null;
+        const selectedPrediction = payload.selected_prediction && typeof payload.selected_prediction === 'object'
+            ? payload.selected_prediction
+            : null;
+        const windows = payload.prediction_windows && typeof payload.prediction_windows === 'object'
+            ? payload.prediction_windows
+            : {};
         const historyLabels = Array.isArray(payload.history_labels) ? payload.history_labels : [];
         const historyValues = Array.isArray(payload.history_values) ? payload.history_values : [];
 
@@ -544,6 +589,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div class="stat-item"><span>Occupied</span><strong>${escapeHtml(formatNumber(selectedSummary.occupied))}</strong></div>
                             <div class="stat-item"><span>Available</span><strong>${escapeHtml(formatNumber(selectedSummary.available))}</strong></div>
                             <div class="stat-item"><span>Status</span><strong><span class="status-pill ${escapeHtml(availabilityBadgeClass(selectedSummary.availability_class))}">${escapeHtml(selectedSummary.availability_class ?? 'Available')}</span></strong></div>
+                            ${selectedPrediction ? `<div class="stat-item"><span>${escapeHtml(windows.current_until_label || 'Forecast later this hour (to end of current hour)')}</span><strong>${escapeHtml(formatNumber(selectedPrediction.current_window?.predicted_available ?? 0))} free (${escapeHtml(selectedPrediction.current_window?.predicted_class || 'Available')})</strong></div>` : ''}
+                            ${selectedPrediction ? `<div class="stat-item"><span>Predicted ${escapeHtml(windows.next_label || 'Next')}</span><strong>${escapeHtml(formatNumber(selectedPrediction.next_window?.predicted_available ?? 0))} free (${escapeHtml(selectedPrediction.next_window?.predicted_class || 'Available')})</strong></div>` : ''}
+                            ${selectedPrediction ? `<div class="stat-item"><span>Operating hours</span><strong>${escapeHtml(selectedPrediction.operating_hours_note || 'Operating hours not provided')}</strong></div>` : ''}
                         </div>
                     </article>
                     <article class="chart-card">
@@ -592,9 +640,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const selectedFacilityId = resolveFacilitiesSelectedFacilityId(host, payload);
+        const predictionMap = payload.hourly_predictions && typeof payload.hourly_predictions === 'object'
+            ? payload.hourly_predictions
+            : {};
         const nextPayload = {
             ...payload,
-            selected_facility_id: selectedFacilityId
+            selected_facility_id: selectedFacilityId,
+            selected_prediction: payload.selected_prediction && typeof payload.selected_prediction === 'object'
+                ? payload.selected_prediction
+                : (predictionMap[selectedFacilityId] || null)
         };
 
         const latestRefresh = host.querySelector('[data-facilities-latest-refresh]');
@@ -609,7 +663,7 @@ document.addEventListener('DOMContentLoaded', () => {
             resultCount.textContent = `Showing ${formatNumber(filteredFacilities.length)} facilities`;
         }
         if (tableBody) {
-            tableBody.innerHTML = renderFacilitiesTableRows(filteredFacilities);
+            tableBody.innerHTML = renderFacilitiesTableRows(filteredFacilities, nextPayload);
         }
 
         renderFacilitiesSelectedShell(host, nextPayload);
@@ -665,6 +719,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         window.facilitiesState?.selected_facility_id === selectedFacilityId
                             ? window.facilitiesState?.history_values ?? []
                             : []
+                    ),
+                    selected_prediction: selectedFacilityId === '' ? null : (
+                        window.facilitiesState?.selected_facility_id === selectedFacilityId
+                            ? window.facilitiesState?.selected_prediction ?? null
+                            : null
                     )
                 });
 
@@ -828,9 +887,8 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const eventsFeaturedTitle = (selectedEvent) => {
-        const featuredForecast = selectedEvent && selectedEvent.featured_forecast ? selectedEvent.featured_forecast : null;
-        return featuredForecast && String(featuredForecast.facility_id ?? '') === '3'
-            ? 'Bella Vista Example'
+        return selectedEvent && selectedEvent.closest_forecast
+            ? 'Closest Facility'
             : 'Featured Facility';
     };
     const buildEventsPageUrl = (selectedEventId, selectedCategory = '') => {
@@ -911,8 +969,13 @@ document.addEventListener('DOMContentLoaded', () => {
             selected_event_id: selectedEvent ? String(selectedEvent.id ?? '') : '',
             selected_event: selectedEvent,
             featured_title: eventsFeaturedTitle(selectedEvent),
+            top_impact_metric_label: 'Projected occupancy %',
             top_impact_labels: topImpact.map((row) => row.facility_name ?? ''),
-            top_impact_values: topImpact.map((row) => Math.round((Number(row.predicted_rate) || 0) * 1000) / 10)
+            top_impact_values: topImpact.map((row) => {
+                const usePrediction = Boolean(selectedEvent && selectedEvent.is_prediction_day);
+                const rate = usePrediction ? Number(row.predicted_rate) : 0;
+                return Math.round((rate || 0) * 1000) / 10;
+            })
         };
     };
     const getEventCategoryFilterValue = (host) => String(host?.querySelector('[data-events-category-filter]')?.value || 'all').trim().toLowerCase();
@@ -1007,8 +1070,13 @@ document.addEventListener('DOMContentLoaded', () => {
             selected_event_id: selectedEvent ? String(selectedEvent.id ?? '') : '',
             selected_event: selectedEvent,
             featured_title: eventsFeaturedTitle(selectedEvent),
+            top_impact_metric_label: 'Projected occupancy %',
             top_impact_labels: topImpact.map((row) => row.facility_name ?? ''),
-            top_impact_values: topImpact.map((row) => Math.round((Number(row.predicted_rate) || 0) * 1000) / 10)
+            top_impact_values: topImpact.map((row) => {
+                const usePrediction = Boolean(selectedEvent && selectedEvent.is_prediction_day);
+                const rate = usePrediction ? Number(row.predicted_rate) : 0;
+                return Math.round((rate || 0) * 1000) / 10;
+            })
         };
     };
     const syncEventsSelectionState = (host, payload) => {
@@ -1055,7 +1123,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="tag">${escapeHtml(attendanceLabel)}: ${escapeHtml(attendanceEstimate)}</span>
                     </div>
                     <h3>${escapeHtml(title)}</h3>
-                    <p class="muted">${escapeHtml(event.starts_at_display ?? '')} to ${escapeHtml(event.ends_at_display ?? '')} | ${escapeHtml(event.venue_name ?? '')}, ${escapeHtml(event.venue_area ?? '')}</p>
+                    <div class="event-meta-list">
+                        <p class="muted event-meta-item"><strong>Starts:</strong> ${escapeHtml(event.starts_at_display ?? '')}</p>
+                        <p class="muted event-meta-item"><strong>Ends:</strong> ${escapeHtml(event.ends_at_display ?? '')}</p>
+                        <p class="muted event-meta-item"><strong>Venue:</strong> ${escapeHtml(event.venue_name ?? '')}, ${escapeHtml(event.venue_area ?? '')}</p>
+                    </div>
                     <p class="muted">${escapeHtml(event.network_headline ?? '')}</p>
                     <div class="event-actions">
                         ${forecastAction}
@@ -1075,8 +1147,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return `
             <h3>${escapeHtml(selectedEvent.title ?? '')}</h3>
-            <p class="muted">${escapeHtml(selectedEvent.starts_at_display ?? '')} to ${escapeHtml(selectedEvent.ends_at_display ?? '')}</p>
+            <p class="muted" style="margin-top:8px;"><strong>${escapeHtml(selectedEvent.timing_label || 'Upcoming event')}:</strong> ${escapeHtml(selectedEvent.timing_note || 'Forecasts are based on live data and historical occupancy patterns.')}</p>
+            <p class="muted" style="margin-top:6px;"><strong>Prediction:</strong> ${escapeHtml(selectedEvent.prediction_note || 'Prediction will be available on the current day of the event.')}</p>
             <div class="stat-list" style="margin-top:18px;">
+                <div class="stat-item"><span>Starts</span><strong>${escapeHtml(selectedEvent.starts_at_display ?? '')}</strong></div>
+                <div class="stat-item"><span>Ends</span><strong>${escapeHtml(selectedEvent.ends_at_display ?? '')}</strong></div>
                 <div class="stat-item"><span>Event type</span><strong>${escapeHtml(selectedEvent.active_category_label || selectedEvent.category_label || 'Event')}</strong></div>
                 <div class="stat-item"><span>Venue</span><strong>${escapeHtml(selectedEvent.venue_name ?? '')}, ${escapeHtml(selectedEvent.venue_area ?? '')}</strong></div>
                 <div class="stat-item"><span>Address</span><strong>${escapeHtml(selectedEvent.venue_address ?? '')}</strong></div>
@@ -1089,6 +1164,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const renderFeaturedForecastPanel = (selectedEvent, featuredTitle) => {
         const featuredForecast = selectedEvent && selectedEvent.featured_forecast ? selectedEvent.featured_forecast : null;
+        const isPredictionDay = Boolean(selectedEvent && selectedEvent.is_prediction_day);
 
         if (!featuredForecast) {
             return `
@@ -1098,22 +1174,25 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }
 
-        const featuredPercent = Math.max(0, Math.min(100, (Number(featuredForecast.predicted_rate) || 0) * 100));
-        const featuredReason = selectedEvent && selectedEvent.featured_reason
-            ? selectedEvent.featured_reason
-            : 'This site is forecast as one of the highest-pressure locations for the selected event.';
+        const featuredPercent = Math.max(0, Math.min(100, (Number(featuredForecast.current_rate) || 0) * 100));
+        const featuredReason = isPredictionDay
+            ? 'Closest facility within 10 km. Showing current availability, with event-day prediction available below.'
+            : 'Closest facility within 10 km. Showing current availability only until the event day.';
+        const primaryAvailable = Number(featuredForecast.current_available) || 0;
+        const occupiedValue = Number(featuredForecast.current_occupied) || 0;
+        const statusValue = String(featuredForecast.current_status || 'Available');
 
         return `
-            <p class="forecast-kicker">${escapeHtml(featuredTitle || 'Featured Facility')}</p>
+            <p class="forecast-kicker">${escapeHtml((selectedEvent && selectedEvent.closest_forecast) ? 'Closest facility to the venue' : (featuredTitle || 'Featured Facility'))}</p>
             <h3>${escapeHtml(featuredForecast.facility_name ?? '')}</h3>
             <p class="muted">${escapeHtml(featuredReason)}</p>
-            <div class="metric">${escapeHtml(formatNumber(featuredForecast.predicted_available))} spaces left</div>
+            <div class="metric">${escapeHtml(formatNumber(primaryAvailable))} spaces now</div>
             <div class="progress"><span style="width: ${featuredPercent}%"></span></div>
             <div class="stat-list" style="margin-top:18px;">
-                <div class="stat-item"><span>Baseline occupied</span><strong>${escapeHtml(formatNumber(featuredForecast.baseline_occupied))}</strong></div>
-                <div class="stat-item"><span>Event lift</span><strong>+${escapeHtml(formatNumber(featuredForecast.event_lift))}</strong></div>
-                <div class="stat-item"><span>Predicted occupied</span><strong>${escapeHtml(formatNumber(featuredForecast.predicted_occupied))}</strong></div>
-                <div class="stat-item"><span>Predicted status</span><strong><span class="status-pill ${escapeHtml(availabilityBadgeClass(featuredForecast.predicted_status))}">${escapeHtml(featuredForecast.predicted_status ?? 'Available')}</span></strong></div>
+                <div class="stat-item"><span>Distance from venue</span><strong>${escapeHtml(formatDistanceKm(featuredForecast.distance_km))} km</strong></div>
+                <div class="stat-item"><span>Current occupied</span><strong>${escapeHtml(formatNumber(occupiedValue))}</strong></div>
+                <div class="stat-item"><span>Current status</span><strong><span class="status-pill ${escapeHtml(availabilityBadgeClass(statusValue))}">${escapeHtml(statusValue)}</span></strong></div>
+                ${isPredictionDay ? '' : '<div class="stat-item"><span>Event-day prediction</span><strong>Available on event day</strong></div>'}
             </div>
         `;
     };
@@ -1121,13 +1200,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const impactRanked = Array.isArray(selectedEvent && selectedEvent.nearby_ranked)
             ? selectedEvent.nearby_ranked.slice()
             : [];
+        const isPredictionDay = Boolean(selectedEvent && selectedEvent.is_prediction_day);
         const searchTerm = (host.querySelector('[data-events-forecast-search]')?.value || '').trim().toLowerCase();
         const statusFilter = host.querySelector('[data-events-forecast-status]')?.value || 'all';
         const sortFilter = host.querySelector('[data-events-forecast-sort]')?.value || 'impact_desc';
 
         const filtered = impactRanked.filter((row) => {
-            const searchValue = `${String(row.facility_id ?? '').toLowerCase()} ${String(row.facility_name ?? '').toLowerCase()} ${String(row.predicted_status ?? '').toLowerCase()}`;
-            const status = String(row.predicted_status ?? '').trim().toLowerCase();
+            const status = String(isPredictionDay ? (row.predicted_status ?? row.current_status) : row.current_status ?? '').trim().toLowerCase();
+            const searchValue = `${String(row.facility_id ?? '').toLowerCase()} ${String(row.facility_name ?? '').toLowerCase()} ${status}`;
             const matchesSearch = searchTerm === '' || searchValue.includes(searchTerm);
             const matchesStatus = statusFilter === 'all'
                 || (statusFilter === 'pressured' && (status === 'full' || status === 'limited'))
@@ -1137,9 +1217,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         filtered.sort((left, right) => {
+            if (sortFilter === 'distance_asc') {
+                const leftDistance = Number(left.distance_km);
+                const rightDistance = Number(right.distance_km);
+                const normalizedLeft = Number.isFinite(leftDistance) ? leftDistance : Number.MAX_SAFE_INTEGER;
+                const normalizedRight = Number.isFinite(rightDistance) ? rightDistance : Number.MAX_SAFE_INTEGER;
+
+                if (normalizedLeft === normalizedRight) {
+                    return String(left.facility_name ?? '').localeCompare(String(right.facility_name ?? ''));
+                }
+
+                return normalizedLeft - normalizedRight;
+            }
+
             if (sortFilter === 'occupancy_desc') {
-                const leftRate = Number(left.predicted_rate) || 0;
-                const rightRate = Number(right.predicted_rate) || 0;
+                const leftRate = Number(isPredictionDay ? left.predicted_rate : left.current_rate) || 0;
+                const rightRate = Number(isPredictionDay ? right.predicted_rate : right.current_rate) || 0;
                 if (leftRate === rightRate) {
                     return String(left.facility_name ?? '').localeCompare(String(right.facility_name ?? ''));
                 }
@@ -1147,8 +1240,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (sortFilter === 'available_asc') {
-                const leftAvailable = Number(left.predicted_available) || 0;
-                const rightAvailable = Number(right.predicted_available) || 0;
+                const leftAvailable = Number(left.current_available) || 0;
+                const rightAvailable = Number(right.current_available) || 0;
                 if (leftAvailable === rightAvailable) {
                     return String(left.facility_name ?? '').localeCompare(String(right.facility_name ?? ''));
                 }
@@ -1176,23 +1269,55 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const renderEventsTableRows = (rows) => {
         if (!Array.isArray(rows) || rows.length === 0) {
-            return '<tr><td colspan="8" class="empty-state">No nearby facilities match the current filters.</td></tr>';
+            return '<tr><td colspan="12" class="empty-state">No nearby facilities match the current filters.</td></tr>';
         }
 
         return rows.map((row) => {
-            const predictedPercent = Math.max(0, Math.min(100, (Number(row.predicted_rate) || 0) * 100));
+            const isPredictionDay = Boolean(window.eventsState && window.eventsState.selected_event && window.eventsState.selected_event.is_prediction_day);
+            const currentPercent = Math.max(0, Math.min(100, (Number(row.current_rate || 0)) * 100));
             const facilityId = encodeURIComponent(String(row.facility_id ?? ''));
-            const searchValue = `${String(row.facility_id ?? '').toLowerCase()} ${String(row.facility_name ?? '').toLowerCase()} ${String(row.predicted_status ?? '').toLowerCase()}`;
+            const statusLabel = isPredictionDay
+                ? String(row.predicted_status || row.current_status || 'Available')
+                : String(row.current_status || 'Available');
+            const searchValue = `${String(row.facility_id ?? '').toLowerCase()} ${String(row.facility_name ?? '').toLowerCase()} ${String(statusLabel).toLowerCase()}`;
+            const closestBadge = row.is_closest
+                ? '<span class="tag closest-badge">Closest</span>'
+                : '';
+            const horizon1 = isPredictionDay ? formatNumber(row.horizon_1h_available) : 'Event day';
+            const horizon3 = isPredictionDay ? formatNumber(row.horizon_3h_available) : 'Event day';
+            const horizon6 = isPredictionDay ? formatNumber(row.horizon_6h_available) : 'Event day';
+            const horizon12 = isPredictionDay ? formatNumber(row.horizon_12h_available) : 'Event day';
+            const eventLiftValue = isPredictionDay ? `<strong>+${escapeHtml(formatNumber(row.event_lift))}</strong>` : 'Event day';
+            let occCell;
+            if (isPredictionDay) {
+                const cap = Math.max(1, Number(row.capacity || 1));
+                const h1Occ = (Math.round(((cap - Number(row.horizon_1h_available ?? 0)) / cap) * 1000) / 10).toFixed(1);
+                const h3Occ = (Math.round(((cap - Number(row.horizon_3h_available ?? 0)) / cap) * 1000) / 10).toFixed(1);
+                const h6Occ = (Math.round(((cap - Number(row.horizon_6h_available ?? 0)) / cap) * 1000) / 10).toFixed(1);
+                const h12Occ = (Math.round(((cap - Number(row.horizon_12h_available ?? 0)) / cap) * 1000) / 10).toFixed(1);
+                occCell = `<small style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">Current</small><strong>${currentPercent.toFixed(1)}%</strong><div class="progress" style="margin-top:4px;margin-bottom:8px;"><span style="width:${currentPercent}%"></span></div><small style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Predicted</small><div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;font-size:12px;"><span>+1H: <strong>${h1Occ}%</strong></span><span>+3H: <strong>${h3Occ}%</strong></span><span>+6H: <strong>${h6Occ}%</strong></span><span>+12H: <strong>${h12Occ}%</strong></span></div>`;
+            } else {
+                occCell = `<strong>${currentPercent.toFixed(1)}%</strong><div class="progress" style="margin-top:8px;"><span style="width:${currentPercent}%"></span></div>`;
+            }
 
             return `
                 <tr data-facility-row data-search="${escapeHtml(searchValue)}">
-                    <td>${escapeHtml(row.facility_name ?? '')}</td>
+                    <td>
+                        <div class="facility-cell">
+                            <span class="facility-name">${escapeHtml(row.facility_name ?? '')}</span>
+                            ${closestBadge}
+                        </div>
+                    </td>
+                    <td>${escapeHtml(formatDistanceKm(row.distance_km))} km</td>
                     <td>${escapeHtml(formatNumber(row.capacity))}</td>
-                    <td>${escapeHtml(formatNumber(row.baseline_occupied))}</td>
-                    <td><strong>+${escapeHtml(formatNumber(row.event_lift))}</strong></td>
-                    <td>${escapeHtml(formatNumber(row.predicted_available))}</td>
-                    <td><strong>${escapeHtml(formatPercentage(predictedPercent))}</strong><div class="progress" style="margin-top:8px;"><span style="width: ${predictedPercent}%"></span></div></td>
-                    <td><span class="status-pill ${escapeHtml(availabilityBadgeClass(row.predicted_status))}">${escapeHtml(row.predicted_status ?? 'Available')}</span></td>
+                    <td>${escapeHtml(formatNumber(row.current_available))}</td>
+                    <td>${escapeHtml(horizon1)}</td>
+                    <td>${escapeHtml(horizon3)}</td>
+                    <td>${escapeHtml(horizon6)}</td>
+                    <td>${escapeHtml(horizon12)}</td>
+                    <td>${eventLiftValue}</td>
+                    <td>${occCell}</td>
+                    <td><span class="status-pill ${escapeHtml(availabilityBadgeClass(statusLabel))}">${escapeHtml(statusLabel)}</span></td>
                     <td><a href="facilities.php?facility_id=${facilityId}">View facility</a></td>
                 </tr>
             `;
@@ -1216,7 +1341,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (tableDescription) {
             const radiusLabel = formatDistanceKm(selectedEvent && selectedEvent.nearby_radius_km);
-            tableDescription.textContent = `Every row below shows a tracked facility within roughly ${radiusLabel} km of the venue.`;
+            tableDescription.textContent = `Every row below shows a tracked facility within roughly ${radiusLabel} km of the venue. Event-based prediction appears only on the event day.`;
+        }
+        const occHeader = host.querySelector('[data-occ-header]');
+        if (occHeader) {
+            const isPredictionDay = Boolean(selectedEvent && selectedEvent.is_prediction_day);
+            occHeader.textContent = isPredictionDay ? 'Current & Predicted Occupancy' : 'Current Occupancy';
         }
         if (tableBody) {
             if (nearbyRows.length === 0) {
@@ -1225,7 +1355,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             tableBody.innerHTML = filteredRows.length === 0
-                ? '<tr><td colspan="8" class="empty-state">No nearby facilities match the current filters.</td></tr>'
+                ? '<tr><td colspan="12" class="empty-state">No nearby facilities match the current filters.</td></tr>'
                 : renderEventsTableRows(filteredRows);
         }
     };
@@ -1307,16 +1437,21 @@ document.addEventListener('DOMContentLoaded', () => {
             content: host.querySelector('[data-events-content]'),
             selectedTitle: host.querySelector('[data-events-selected-title]'),
             selectedCategory: host.querySelector('[data-events-selected-category]'),
+            selectedTiming: host.querySelector('[data-events-selected-timing]'),
             trackedCount: host.querySelector('[data-events-tracked-count]'),
             spillover: host.querySelector('[data-events-spillover]'),
             pressureCount: host.querySelector('[data-events-pressure-count]'),
             pressureCopy: host.querySelector('[data-events-pressure-copy]'),
             featuredAvailable: host.querySelector('[data-events-featured-available]'),
+            featuredCopy: host.querySelector('[data-events-featured-copy]'),
             cardCount: host.querySelector('[data-events-card-count]'),
             cards: host.querySelector('[data-events-cards]'),
             selectedPanel: host.querySelector('[data-events-selected-panel]'),
             featuredPanel: host.querySelector('[data-events-featured-panel]'),
-            tableBody: host.querySelector('[data-events-table-body]')
+            tableBody: host.querySelector('[data-events-table-body]'),
+            impactChartCopy: host.querySelector('[data-impact-chart-copy]'),
+            impactChartCard: host.querySelector('[data-impact-chart-card]'),
+            impactChartUnavailable: host.querySelector('[data-impact-chart-unavailable]')
         };
         const fullCount = Number(selectedEvent && selectedEvent.status_counts ? selectedEvent.status_counts.full : 0) || 0;
         const limitedCount = Number(selectedEvent && selectedEvent.status_counts ? selectedEvent.status_counts.limited : 0) || 0;
@@ -1342,6 +1477,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (fields.selectedCategory) {
             fields.selectedCategory.textContent = selectedEvent ? (selectedEvent.active_category_label || selectedEvent.category_label || 'Event') : 'None';
         }
+        if (fields.selectedTiming) {
+            fields.selectedTiming.textContent = selectedEvent ? (selectedEvent.timing_label || 'Upcoming event') : 'None';
+        }
         if (fields.trackedCount) {
             fields.trackedCount.textContent = formatNumber(events.length);
         }
@@ -1352,13 +1490,29 @@ document.addEventListener('DOMContentLoaded', () => {
             fields.pressureCount.textContent = formatNumber(fullCount + limitedCount);
         }
         if (fields.pressureCopy) {
-            fields.pressureCopy.textContent = `${formatNumber(fullCount)} full and ${formatNumber(limitedCount)} limited sites are projected under the selected event.`;
+            fields.pressureCopy.textContent = selectedEvent && selectedEvent.is_prediction_day
+                ? `${formatNumber(fullCount)} full and ${formatNumber(limitedCount)} limited sites are projected under the selected event.`
+                : `${formatNumber(fullCount)} full and ${formatNumber(limitedCount)} limited nearby sites are currently observed.`;
+        }
+        if (fields.impactChartCopy) {
+            fields.impactChartCopy.textContent = 'The chart below ranks the eight sites receiving the biggest event-driven parking lift, then shows their projected occupancy percentage.';
+        }
+        if (fields.impactChartCard) {
+            fields.impactChartCard.hidden = !(selectedEvent && selectedEvent.is_prediction_day);
+        }
+        if (fields.impactChartUnavailable) {
+            fields.impactChartUnavailable.hidden = Boolean(selectedEvent && selectedEvent.is_prediction_day);
         }
         if (fields.featuredAvailable) {
             const available = selectedEvent && selectedEvent.featured_forecast
-                ? selectedEvent.featured_forecast.predicted_available
+                ? selectedEvent.featured_forecast.current_available
                 : 0;
             fields.featuredAvailable.textContent = formatNumber(available);
+        }
+        if (fields.featuredCopy) {
+            fields.featuredCopy.textContent = selectedEvent && selectedEvent.is_prediction_day
+                ? 'Closest highlighted facility current availability. Event-day prediction is active.'
+                : 'Closest highlighted facility current availability. Prediction becomes available on the event day.';
         }
         if (fields.cardCount) {
             fields.cardCount.textContent = `Showing ${formatNumber(events.length)} event${events.length === 1 ? '' : 's'}`;
@@ -1377,8 +1531,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         updateChartData(
             window.eventsCharts && window.eventsCharts.impact,
-            Array.isArray(displayState.top_impact_labels) ? displayState.top_impact_labels : [],
-            Array.isArray(displayState.top_impact_values) ? displayState.top_impact_values : []
+            selectedEvent && selectedEvent.is_prediction_day && Array.isArray(displayState.top_impact_labels)
+                ? displayState.top_impact_labels
+                : [],
+            Array.isArray(displayState.top_impact_values) ? displayState.top_impact_values : [],
+            'Projected occupancy %'
         );
         bindEventsCategoryControl(host);
         syncEventsSelectionState(
@@ -1390,6 +1547,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     selected_event_id: displayState.selected_event_id,
                     selected_event: displayState.selected_event,
                     featured_title: displayState.featured_title,
+                    top_impact_metric_label: String(displayState.top_impact_metric_label || ''),
                     top_impact_labels: Array.isArray(displayState.top_impact_labels) ? displayState.top_impact_labels : [],
                     top_impact_values: Array.isArray(displayState.top_impact_values) ? displayState.top_impact_values : []
                 }
@@ -1422,12 +1580,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const intervalMs = Number.parseInt(host.getAttribute('data-live-collector-interval') || '10000', 10) || 10000;
         const intervalSeconds = Math.max(1, Math.round(intervalMs / 1000));
         const idleCollectorMessage = `Auto sync every ${intervalSeconds} second${intervalSeconds === 1 ? '' : 's'} while this ${pageLabel} is open`;
+        const minCheckingVisibleMs = 700;
         let collectorInFlight = false;
+        let checkingShownAt = 0;
 
         const setCollectorStatus = (message) => {
             liveCollectorStatusNodes.forEach((node) => {
                 node.textContent = message;
             });
+        };
+
+        const showCheckingStatus = () => {
+            checkingShownAt = Date.now();
+            setCollectorStatus(checkingMessage || 'Checking live data...');
+        };
+
+        const setCollectorStatusAfterChecking = async (message) => {
+            const elapsed = Date.now() - checkingShownAt;
+            if (checkingShownAt > 0 && elapsed < minCheckingVisibleMs) {
+                await new Promise((resolve) => {
+                    window.setTimeout(resolve, minCheckingVisibleMs - elapsed);
+                });
+            }
+            setCollectorStatus(message);
         };
 
         const fetchViewData = async () => {
@@ -1468,7 +1643,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             collectorInFlight = true;
-            setCollectorStatus(checkingMessage || 'Checking live data...');
+            showCheckingStatus();
 
             try {
                 const response = await fetch(collectorUrl, {
@@ -1483,36 +1658,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const payload = await response.json().catch(() => null);
                 if (!response.ok || !payload) {
-                    setCollectorStatus('Live sync failed. Retrying automatically.');
+                    await setCollectorStatusAfterChecking('Live sync failed. Retrying automatically.');
                     return;
                 }
 
                 const viewUpdated = await fetchViewData();
 
                 if (payload.status === 'updated') {
-                    setCollectorStatus(viewUpdated ? updatedMessage : refreshFailureMessage);
+                    await setCollectorStatusAfterChecking(viewUpdated ? updatedMessage : refreshFailureMessage);
                     return;
                 }
 
                 if (payload.status === 'checked') {
-                    setCollectorStatus(checkedMessage);
+                    await setCollectorStatusAfterChecking(checkedMessage);
                     return;
                 }
 
                 if (payload.status === 'busy') {
-                    setCollectorStatus(viewUpdated ? busyMessage : 'Live sync is already running in another request.');
+                    await setCollectorStatusAfterChecking(busyMessage || 'Live sync is currently running.');
                     return;
                 }
 
                 if (payload.status === 'skipped') {
-                    setCollectorStatus(viewUpdated ? idleCollectorMessage : refreshFailureMessage);
+                    await setCollectorStatusAfterChecking(viewUpdated ? idleCollectorMessage : refreshFailureMessage);
                     return;
                 }
 
-                setCollectorStatus('Live sync failed. Retrying automatically.');
+                await setCollectorStatusAfterChecking('Live sync failed. Retrying automatically.');
             } catch (error) {
                 console.error(`${logPrefix} live sync failed:`, error);
-                setCollectorStatus('Live sync failed. Retrying automatically.');
+                await setCollectorStatusAfterChecking('Live sync failed. Retrying automatically.');
             } finally {
                 collectorInFlight = false;
             }
@@ -1522,10 +1697,20 @@ document.addEventListener('DOMContentLoaded', () => {
             renderPayload(host, initialState);
         }
 
+        // Always start from a fresh checking state, then trigger collector immediately.
+        showCheckingStatus();
         runCollector();
+
         window.setInterval(runCollector, intervalMs);
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) {
+                showCheckingStatus();
+                runCollector();
+            }
+        });
+        window.addEventListener('pageshow', (event) => {
+            if (event.persisted) {
+                showCheckingStatus();
                 runCollector();
             }
         });
@@ -1546,7 +1731,7 @@ document.addEventListener('DOMContentLoaded', () => {
             checkingMessage: 'Checking live network summary...',
             updatedMessage: 'Live sync completed. Home highlights updated in place.',
             checkedMessage: 'Live sync is current. Home highlights stay updated without a page refresh.',
-            busyMessage: 'Live sync is already running elsewhere. Showing the newest home summary.',
+            busyMessage: 'Live sync is currently running. Showing the newest home summary.',
             refreshFailureMessage: 'Live data is available, but the Home page could not refresh.',
             logPrefix: 'Home'
         });
@@ -1562,7 +1747,7 @@ document.addEventListener('DOMContentLoaded', () => {
             checkingMessage: 'Checking live occupancy summary...',
             updatedMessage: 'Live sync completed. Dashboard updated in place.',
             checkedMessage: 'Live sync is current. Dashboard stays updated without a page refresh.',
-            busyMessage: 'Live sync is already running elsewhere. Showing the newest stored data.',
+            busyMessage: 'Live sync is currently running. Showing the newest stored data.',
             refreshFailureMessage: 'Live data is available, but the dashboard view could not refresh.',
             logPrefix: 'Dashboard'
         });
@@ -1579,7 +1764,7 @@ document.addEventListener('DOMContentLoaded', () => {
             checkingMessage: 'Checking live facility statuses...',
             updatedMessage: 'Live sync completed. Facilities updated in place.',
             checkedMessage: 'Live sync is current. Facilities stay updated without a page refresh.',
-            busyMessage: 'Live sync is already running elsewhere. Showing the newest facility status.',
+            busyMessage: 'Live sync is currently running. Showing the newest facility status.',
             refreshFailureMessage: 'Live data is available, but the Facilities page could not refresh.',
             logPrefix: 'Facilities'
         });
@@ -1595,7 +1780,7 @@ document.addEventListener('DOMContentLoaded', () => {
             checkingMessage: 'Checking live analytics snapshot...',
             updatedMessage: 'Live sync completed. Insights updated in place.',
             checkedMessage: 'Live sync is current. Insights stay updated without a page refresh.',
-            busyMessage: 'Live sync is already running elsewhere. Showing the newest insight summary.',
+            busyMessage: 'Live sync is currently running. Showing the newest insight summary.',
             refreshFailureMessage: 'Live data is available, but the Insights page could not refresh.',
             logPrefix: 'Insights'
         });
@@ -1611,7 +1796,7 @@ document.addEventListener('DOMContentLoaded', () => {
             checkingMessage: 'Checking live platform coverage...',
             updatedMessage: 'Live sync completed. About coverage stats updated in place.',
             checkedMessage: 'Live sync is current. About coverage stays updated without a page refresh.',
-            busyMessage: 'Live sync is already running elsewhere. Showing the newest platform coverage.',
+            busyMessage: 'Live sync is currently running. Showing the newest platform coverage.',
             refreshFailureMessage: 'Live data is available, but the About page could not refresh.',
             logPrefix: 'About'
         });
@@ -1633,7 +1818,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 : 'Checking live Sydney event feed...',
             updatedMessage: 'Live sync completed. Events forecasts updated in place.',
             checkedMessage: 'Live sync is current. Events forecasts stay updated without a page refresh.',
-            busyMessage: 'Live sync is already running elsewhere. Showing the newest event forecasts.',
+            busyMessage: 'Live sync is currently running. Showing the newest event forecasts.',
             refreshFailureMessage: 'Live data is available, but the Events forecast could not refresh.',
             logPrefix: 'Events'
         });

@@ -107,7 +107,7 @@ window.insightsCharts.topAverage = new Chart(document.getElementById('topAverage
             backgroundColor: 'rgba(14, 94, 181, 0.82)'
         }]
     },
-    options: { indexAxis: 'y', responsive: true, scales: { x: { beginAtZero: true, max: 100 } } }
+    options: { indexAxis: 'y', responsive: true, layout: { padding: { left: 14 } }, scales: { y: { ticks: { font: { size: 9 }, padding: 8, autoSkip: false } }, x: { beginAtZero: true, max: 100 } } }
 });
 window.insightsCharts.capacity = new Chart(document.getElementById('capacityChart'), {
     type: 'bar',
@@ -121,7 +121,7 @@ window.insightsCharts.capacity = new Chart(document.getElementById('capacityChar
             backgroundColor: 'rgba(14, 165, 168, 0.82)'
         }]
     },
-    options: { indexAxis: 'y', responsive: true, scales: { x: { beginAtZero: true } } }
+    options: { indexAxis: 'y', responsive: true, layout: { padding: { left: 14 } }, scales: { y: { ticks: { font: { size: 9 }, padding: 8, autoSkip: false } }, x: { beginAtZero: true } } }
 });
 </script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

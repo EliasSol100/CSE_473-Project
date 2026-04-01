@@ -12,9 +12,13 @@ try {
 $collectorIntervalSeconds = max(1, (int) round($collectorIntervalMs / 1000));
 
 $summary = summary_metrics();
+$latest = latest_snapshots();
 $hourly = hourly_average_occupancy();
-$topLatest = top_latest_facilities(8);
+$topLatest = array_slice($latest, 0, 8);
 $distribution = availability_distribution();
+$predictionBundle = facility_hourly_predictions($latest);
+$predictionWindows = $predictionBundle['windows'] ?? [];
+$predictionSummary = $predictionBundle['summary'] ?? [];
 $hourLabels = array_map(fn($row) => sprintf('%02d:00', (int) $row['hour']), $hourly);
 $hourValues = array_map(fn($row) => (float) $row['average_occupancy'], $hourly);
 $topLabels = array_map(fn($row) => $row['facility_name'], $topLatest);
@@ -26,6 +30,9 @@ $dashboardPayload = [
     'top_latest' => $topLatest,
     'hourly' => $hourly,
     'distribution' => $distribution,
+    'prediction_windows' => $predictionWindows,
+    'hourly_predictions' => $predictionBundle['predictions'] ?? [],
+    'prediction_summary' => $predictionSummary,
 ];
 ?>
 <div class="container" data-live-collector-url="api/collect_live.php" data-live-collector-interval="<?= h((string) $collectorIntervalMs) ?>" data-live-summary-url="api/live_summary.php">
@@ -44,6 +51,10 @@ $dashboardPayload = [
         <article class="card"><h3>Occupied Spaces</h3><div class="metric" data-summary-occupied><?= h(format_number($summary['occupied_now'] ?? 0)) ?></div><p class="muted">Total spaces currently in use based on the newest facility readings.</p></article>
         <article class="card"><h3>Available Spaces</h3><div class="metric" data-summary-available><?= h(format_number($summary['available_now'] ?? 0)) ?></div><p class="muted">Estimated free capacity available right now across all monitored facilities.</p></article>
         <article class="card"><h3>Average Utilization</h3><div class="metric" data-summary-avg><?= h(format_percentage($summary['avg_occupancy'] ?? 0)) ?></div><p class="muted">Current mean occupancy percentage for the latest record of each site.</p></article>
+        <article class="card"><h3>Predicted Free (<?= h((string) ($predictionWindows['current_label'] ?? 'Current hour')) ?>)</h3><div class="metric" data-prediction-current-available><?= h(format_number($predictionSummary['current_window_available_total'] ?? 0)) ?></div><p class="muted">Forecast available spaces for the ongoing hour window in <?= h((string) ($predictionWindows['timezone'] ?? 'Australia/Sydney')) ?>.</p></article>
+        <article class="card"><h3>Predicted Free (<?= h((string) ($predictionWindows['next_label'] ?? 'Next hour')) ?>)</h3><div class="metric" data-prediction-next-available><?= h(format_number($predictionSummary['next_window_available_total'] ?? 0)) ?></div><p class="muted">Forecast available spaces for the upcoming hour window across all tracked sites.</p></article>
+        <article class="card"><h3>24/7 Facilities</h3><div class="metric" data-prediction-open247><?= h(format_number($predictionSummary['open_24_7_count'] ?? 0)) ?></div><p class="muted">Sites reported as open all day by the NSW API operating-hours metadata.</p></article>
+        <article class="card"><h3>Limited-Hours Facilities</h3><div class="metric" data-prediction-limited-hours><?= h(format_number($predictionSummary['limited_hours_count'] ?? 0)) ?></div><p class="muted">Sites that are not marked as 24/7 and may have closing periods (including nighttime closures).</p></article>
     </section>
 
     <section class="chart-grid">
@@ -137,7 +148,7 @@ window.dashboardCharts.busiest = new Chart(document.getElementById('busiestChart
     options: {
         indexAxis: 'y',
         responsive: true,
-        scales: { x: { beginAtZero: true, max: 100 } }
+        scales: { y: { ticks: { font: { size: 11 } } }, x: { beginAtZero: true, max: 100 } }
     }
 });
 window.dashboardColors = { chartPrimary, chartSecondary, chartAccent, chartDanger };
