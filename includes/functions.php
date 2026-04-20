@@ -318,29 +318,29 @@ function parking_timezone(): DateTimeZone
 function parking_forecast_windows(): array
 {
     $now = new DateTimeImmutable('now', parking_timezone());
-    $currentStart = $now->setTime((int) $now->format('G'), 0, 0);
-    $currentEnd = $currentStart->modify('+1 hour');
-    $nextStart = $currentEnd;
-    $nextEnd = $nextStart->modify('+1 hour');
+    $horizons = [];
+
+    foreach ([1, 2, 3] as $hoursAhead) {
+        $targetPoint = $now->modify('+' . $hoursAhead . ' hours');
+        $targetStart = $targetPoint->setTime((int) $targetPoint->format('G'), 0, 0);
+        $targetEnd = $targetStart->modify('+1 hour');
+
+        $horizons[(string) $hoursAhead] = [
+            'hours_ahead' => $hoursAhead,
+            'start' => $targetStart,
+            'end' => $targetEnd,
+            'hour' => (int) $targetStart->format('G'),
+            'is_weekend' => ((int) $targetStart->format('N')) >= 6 ? 1 : 0,
+            'label' => '+' . $hoursAhead . 'h',
+            'window_label' => $targetStart->format('H:i') . ' - ' . $targetEnd->format('H:i'),
+            'detail_label' => '+' . $hoursAhead . 'h forecast (' . $targetStart->format('H:i') . ' - ' . $targetEnd->format('H:i') . ')',
+        ];
+    }
 
     return [
         'timezone' => parking_timezone()->getName(),
         'now_label' => $now->format('d M Y, H:i'),
-        'current_until_label' => 'Forecast later this hour (to ' . $currentEnd->format('H:i') . ')',
-        'current' => [
-            'start' => $currentStart,
-            'end' => $currentEnd,
-            'hour' => (int) $currentStart->format('G'),
-            'is_weekend' => ((int) $currentStart->format('N')) >= 6 ? 1 : 0,
-            'label' => $currentStart->format('H:i') . ' - ' . $currentEnd->format('H:i'),
-        ],
-        'next' => [
-            'start' => $nextStart,
-            'end' => $nextEnd,
-            'hour' => (int) $nextStart->format('G'),
-            'is_weekend' => ((int) $nextStart->format('N')) >= 6 ? 1 : 0,
-            'label' => $nextStart->format('H:i') . ' - ' . $nextEnd->format('H:i'),
-        ],
+        'horizons' => $horizons,
     ];
 }
 
@@ -354,8 +354,9 @@ function facility_hourly_predictions(array $latestRows = []): array
             'windows' => $windows,
             'predictions' => [],
             'summary' => [
-                'current_window_available_total' => 0,
-                'next_window_available_total' => 0,
+                'horizon_1h_available_total' => 0,
+                'horizon_2h_available_total' => 0,
+                'horizon_3h_available_total' => 0,
                 'open_24_7_count' => 0,
                 'limited_hours_count' => 0,
                 'unknown_hours_count' => 0,
@@ -401,8 +402,11 @@ function facility_hourly_predictions(array $latestRows = []): array
     }
 
     $predictions = [];
-    $currentAvailableTotal = 0;
-    $nextAvailableTotal = 0;
+    $horizonAvailableTotals = [
+        '1' => 0,
+        '2' => 0,
+        '3' => 0,
+    ];
     $open247Count = 0;
     $limitedHoursCount = 0;
     $unknownHoursCount = 0;
@@ -422,39 +426,33 @@ function facility_hourly_predictions(array $latestRows = []): array
             $unknownHoursCount++;
         }
 
-        $currentForecast = facility_predict_window(
-            $facilityId,
-            $capacity,
-            $currentRate,
-            (int) ($windows['current']['hour'] ?? 0),
-            (int) ($windows['current']['is_weekend'] ?? 0),
-            $facilityHourMap,
-            $facilityHourAnyMap,
-            $globalHourly,
-            $operatingMeta
-        );
-        $nextForecast = facility_predict_window(
-            $facilityId,
-            $capacity,
-            $currentRate,
-            (int) ($windows['next']['hour'] ?? 0),
-            (int) ($windows['next']['is_weekend'] ?? 0),
-            $facilityHourMap,
-            $facilityHourAnyMap,
-            $globalHourly,
-            $operatingMeta
-        );
+        $facilityHorizonPredictions = [];
+        foreach (($windows['horizons'] ?? []) as $horizonKey => $horizon) {
+            $forecast = facility_predict_window(
+                $facilityId,
+                $capacity,
+                $currentRate,
+                (int) ($horizon['hour'] ?? 0),
+                (int) ($horizon['is_weekend'] ?? 0),
+                $facilityHourMap,
+                $facilityHourAnyMap,
+                $globalHourly,
+                $operatingMeta
+            );
 
-        $currentAvailableTotal += (int) ($currentForecast['predicted_available'] ?? 0);
-        $nextAvailableTotal += (int) ($nextForecast['predicted_available'] ?? 0);
+            $facilityHorizonPredictions[$horizonKey] = $forecast;
+            $horizonAvailableTotals[$horizonKey] += (int) ($forecast['predicted_available'] ?? 0);
+        }
 
         $predictions[$facilityId] = [
             'facility_id' => $facilityId,
             'facility_name' => $facilityName,
             'is_open_24_7' => $operatingMeta['is_open_24_7'],
             'operating_hours_note' => $operatingMeta['note'],
-            'current_window' => $currentForecast,
-            'next_window' => $nextForecast,
+            'horizons' => $facilityHorizonPredictions,
+            'horizon_1h' => $facilityHorizonPredictions['1'] ?? null,
+            'horizon_2h' => $facilityHorizonPredictions['2'] ?? null,
+            'horizon_3h' => $facilityHorizonPredictions['3'] ?? null,
         ];
     }
 
@@ -462,14 +460,21 @@ function facility_hourly_predictions(array $latestRows = []): array
         'windows' => [
             'timezone' => (string) ($windows['timezone'] ?? 'Australia/Sydney'),
             'now_label' => (string) ($windows['now_label'] ?? ''),
-            'current_until_label' => (string) ($windows['current_until_label'] ?? 'Forecast later this hour (to end of current hour)'),
-            'current_label' => (string) (($windows['current']['label'] ?? 'Current hour')),
-            'next_label' => (string) (($windows['next']['label'] ?? 'Next hour')),
+            'horizon_1h_label' => (string) (($windows['horizons']['1']['label'] ?? '+1h')),
+            'horizon_2h_label' => (string) (($windows['horizons']['2']['label'] ?? '+2h')),
+            'horizon_3h_label' => (string) (($windows['horizons']['3']['label'] ?? '+3h')),
+            'horizon_1h_window_label' => (string) (($windows['horizons']['1']['window_label'] ?? '')),
+            'horizon_2h_window_label' => (string) (($windows['horizons']['2']['window_label'] ?? '')),
+            'horizon_3h_window_label' => (string) (($windows['horizons']['3']['window_label'] ?? '')),
+            'horizon_1h_detail_label' => (string) (($windows['horizons']['1']['detail_label'] ?? '+1h forecast')),
+            'horizon_2h_detail_label' => (string) (($windows['horizons']['2']['detail_label'] ?? '+2h forecast')),
+            'horizon_3h_detail_label' => (string) (($windows['horizons']['3']['detail_label'] ?? '+3h forecast')),
         ],
         'predictions' => $predictions,
         'summary' => [
-            'current_window_available_total' => $currentAvailableTotal,
-            'next_window_available_total' => $nextAvailableTotal,
+            'horizon_1h_available_total' => $horizonAvailableTotals['1'],
+            'horizon_2h_available_total' => $horizonAvailableTotals['2'],
+            'horizon_3h_available_total' => $horizonAvailableTotals['3'],
             'open_24_7_count' => $open247Count,
             'limited_hours_count' => $limitedHoursCount,
             'unknown_hours_count' => $unknownHoursCount,

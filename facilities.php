@@ -29,7 +29,7 @@ $facilitiesSyncUrl = 'api/facilities_summary.php';
 
 require_once __DIR__ . '/includes/header.php';
 ?>
-<div class="container" data-live-collector-url="api/collect_live.php" data-live-facilities-url="<?= h($facilitiesSyncUrl) ?>" data-live-facilities-selected="<?= h($selectedFacilityId) ?>" data-live-collector-interval="<?= h((string) $collectorIntervalMs) ?>">
+<div class="container facilities-page" data-live-collector-url="api/collect_live.php" data-live-facilities-url="<?= h($facilitiesSyncUrl) ?>" data-live-facilities-selected="<?= h($selectedFacilityId) ?>" data-live-collector-interval="<?= h((string) $collectorIntervalMs) ?>">
     <div class="section-title">
         <div>
             <h2>Facility monitoring center</h2>
@@ -41,8 +41,8 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 
-    <section class="table-card" style="margin-bottom:24px;">
-        <div class="filters">
+    <section class="table-card facilities-table-card" style="margin-bottom:24px;">
+        <div class="filters facilities-filters">
             <input class="search-bar" type="text" placeholder="Search by facility name or ID..." data-facilities-search>
             <select class="select-field" data-facilities-status-filter>
                 <option value="all">All statuses</option>
@@ -54,7 +54,7 @@ require_once __DIR__ . '/includes/header.php';
                 <option value="occupancy_desc">Full to lowest occupancy</option>
                 <option value="occupancy_asc">Lowest occupancy to full</option>
             </select>
-            <form method="get" data-facilities-selection-form>
+            <form method="get" class="facilities-picker-form" data-facilities-selection-form>
                 <select class="select-field" name="facility_id" data-facilities-facility-filter>
                     <option value="">Show all facilities</option>
                     <?php foreach ($options as $option): ?>
@@ -68,15 +68,16 @@ require_once __DIR__ . '/includes/header.php';
             <span class="tag" data-facilities-result-count>Showing <?= h(format_number(count($visibleFacilities))) ?> facilities</span>
         </div>
 
-        <div class="table-wrap">
-            <table>
-                <thead><tr><th>Facility ID</th><th>Facility Name</th><th>Capacity</th><th>Occupied</th><th>Available</th><th>Occupancy</th><th>Status</th><th><?= h((string) ($predictionWindows['current_until_label'] ?? 'Forecast later this hour (to end of current hour)')) ?></th><th>Predicted <?= h((string) ($predictionWindows['next_label'] ?? 'Next')) ?></th><th>Operating Hours</th></tr></thead>
+        <div class="table-wrap facilities-table-wrap">
+            <table class="facilities-table">
+                <thead><tr><th>Facility ID</th><th>Facility Name</th><th>Capacity</th><th>Occupied</th><th>Available</th><th>Occupancy</th><th>Status</th><th><?= h((string) ($predictionWindows['horizon_1h_label'] ?? '+1h')) ?></th><th><?= h((string) ($predictionWindows['horizon_2h_label'] ?? '+2h')) ?></th><th><?= h((string) ($predictionWindows['horizon_3h_label'] ?? '+3h')) ?></th><th>Operating Hours</th></tr></thead>
                 <tbody data-facilities-table-body>
                     <?php foreach ($visibleFacilities as $row): ?>
                         <?php $percent = (float) $row['occupancy_rate'] * 100; ?>
                         <?php $prediction = is_array($hourlyPredictions[$row['facility_id']] ?? null) ? $hourlyPredictions[$row['facility_id']] : null; ?>
-                        <?php $currentPred = is_array($prediction['current_window'] ?? null) ? $prediction['current_window'] : null; ?>
-                        <?php $nextPred = is_array($prediction['next_window'] ?? null) ? $prediction['next_window'] : null; ?>
+                        <?php $horizon1Pred = is_array($prediction['horizon_1h'] ?? null) ? $prediction['horizon_1h'] : null; ?>
+                        <?php $horizon2Pred = is_array($prediction['horizon_2h'] ?? null) ? $prediction['horizon_2h'] : null; ?>
+                        <?php $horizon3Pred = is_array($prediction['horizon_3h'] ?? null) ? $prediction['horizon_3h'] : null; ?>
                         <tr>
                             <td><?= h($row['facility_id']) ?></td>
                             <td><a href="facilities.php?facility_id=<?= urlencode($row['facility_id']) ?>"><?= h($row['facility_name']) ?></a></td>
@@ -86,17 +87,25 @@ require_once __DIR__ . '/includes/header.php';
                             <td><strong><?= h(format_percentage($percent)) ?></strong><div class="progress" style="margin-top:8px;"><span style="width: <?= max(0, min(100, $percent)) ?>%"></span></div></td>
                             <td><span class="status-pill <?= h(availability_badge_class($row['availability_class'])) ?>"><?= h($row['availability_class']) ?></span></td>
                             <td>
-                                <?php if ($currentPred): ?>
-                                    <strong><?= h(format_number($currentPred['predicted_available'] ?? 0)) ?> free</strong><br>
-                                    <span class="status-pill <?= h(availability_badge_class($currentPred['predicted_class'] ?? 'Available')) ?>"><?= h($currentPred['predicted_class'] ?? 'Available') ?></span>
+                                <?php if ($horizon1Pred): ?>
+                                    <strong><?= h(format_number($horizon1Pred['predicted_available'] ?? 0)) ?> free</strong><br>
+                                    <span class="status-pill <?= h(availability_badge_class($horizon1Pred['predicted_class'] ?? 'Available')) ?>"><?= h($horizon1Pred['predicted_class'] ?? 'Available') ?></span>
                                 <?php else: ?>
                                     <span class="muted">No forecast</span>
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <?php if ($nextPred): ?>
-                                    <strong><?= h(format_number($nextPred['predicted_available'] ?? 0)) ?> free</strong><br>
-                                    <span class="status-pill <?= h(availability_badge_class($nextPred['predicted_class'] ?? 'Available')) ?>"><?= h($nextPred['predicted_class'] ?? 'Available') ?></span>
+                                <?php if ($horizon2Pred): ?>
+                                    <strong><?= h(format_number($horizon2Pred['predicted_available'] ?? 0)) ?> free</strong><br>
+                                    <span class="status-pill <?= h(availability_badge_class($horizon2Pred['predicted_class'] ?? 'Available')) ?>"><?= h($horizon2Pred['predicted_class'] ?? 'Available') ?></span>
+                                <?php else: ?>
+                                    <span class="muted">No forecast</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($horizon3Pred): ?>
+                                    <strong><?= h(format_number($horizon3Pred['predicted_available'] ?? 0)) ?> free</strong><br>
+                                    <span class="status-pill <?= h(availability_badge_class($horizon3Pred['predicted_class'] ?? 'Available')) ?>"><?= h($horizon3Pred['predicted_class'] ?? 'Available') ?></span>
                                 <?php else: ?>
                                     <span class="muted">No forecast</span>
                                 <?php endif; ?>
@@ -123,11 +132,12 @@ require_once __DIR__ . '/includes/header.php';
                         <div class="stat-item"><span>Occupied</span><strong><?= h(format_number($selectedSummary['occupied'])) ?></strong></div>
                         <div class="stat-item"><span>Available</span><strong><?= h(format_number($selectedSummary['available'])) ?></strong></div>
                         <div class="stat-item"><span>Status</span><strong><span class="status-pill <?= h(availability_badge_class($selectedSummary['availability_class'])) ?>"><?= h($selectedSummary['availability_class']) ?></span></strong></div>
-                            <?php if ($selectedPrediction): ?>
-                                <div class="stat-item"><span><?= h((string) ($predictionWindows['current_until_label'] ?? 'Forecast later this hour (to end of current hour)')) ?></span><strong><?= h(format_number($selectedPrediction['current_window']['predicted_available'] ?? 0)) ?> free (<?= h($selectedPrediction['current_window']['predicted_class'] ?? 'Available') ?>)</strong></div>
-                                <div class="stat-item"><span>Predicted <?= h((string) ($predictionWindows['next_label'] ?? 'Next')) ?></span><strong><?= h(format_number($selectedPrediction['next_window']['predicted_available'] ?? 0)) ?> free (<?= h($selectedPrediction['next_window']['predicted_class'] ?? 'Available') ?>)</strong></div>
-                                <div class="stat-item"><span>Operating hours</span><strong><?= h($selectedPrediction['operating_hours_note'] ?? 'Operating hours not provided') ?></strong></div>
-                            <?php endif; ?>
+                        <?php if ($selectedPrediction): ?>
+                            <div class="stat-item"><span><?= h((string) ($predictionWindows['horizon_1h_detail_label'] ?? '+1h forecast')) ?></span><strong><?= h(format_number($selectedPrediction['horizon_1h']['predicted_available'] ?? 0)) ?> free (<?= h($selectedPrediction['horizon_1h']['predicted_class'] ?? 'Available') ?>)</strong></div>
+                            <div class="stat-item"><span><?= h((string) ($predictionWindows['horizon_2h_detail_label'] ?? '+2h forecast')) ?></span><strong><?= h(format_number($selectedPrediction['horizon_2h']['predicted_available'] ?? 0)) ?> free (<?= h($selectedPrediction['horizon_2h']['predicted_class'] ?? 'Available') ?>)</strong></div>
+                            <div class="stat-item"><span><?= h((string) ($predictionWindows['horizon_3h_detail_label'] ?? '+3h forecast')) ?></span><strong><?= h(format_number($selectedPrediction['horizon_3h']['predicted_available'] ?? 0)) ?> free (<?= h($selectedPrediction['horizon_3h']['predicted_class'] ?? 'Available') ?>)</strong></div>
+                            <div class="stat-item"><span>Operating hours</span><strong><?= h($selectedPrediction['operating_hours_note'] ?? 'Operating hours not provided') ?></strong></div>
+                        <?php endif; ?>
                     </div>
                 </article>
                 <article class="chart-card">

@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const renderEventsDistanceEmptyState = (radiusKm) => {
         const radiusLabel = formatDistanceKm(radiusKm);
-        return `<tr><td colspan="12" class="empty-state">No tracked parking facilities are within ${escapeHtml(radiusLabel)} km of this event venue.</td></tr>`;
+        return `<tr><td colspan="11" class="empty-state">No tracked parking facilities are within ${escapeHtml(radiusLabel)} km of this event venue.</td></tr>`;
     };
     const escapeHtml = (value) => String(value == null ? '' : value)
         .replace(/&/g, '&amp;')
@@ -346,8 +346,9 @@ document.addEventListener('DOMContentLoaded', () => {
             occupied: host.querySelector('[data-summary-occupied]'),
             available: host.querySelector('[data-summary-available]'),
             average: host.querySelector('[data-summary-avg]'),
-            predictionCurrentAvailable: host.querySelector('[data-prediction-current-available]'),
-            predictionNextAvailable: host.querySelector('[data-prediction-next-available]'),
+            prediction1hAvailable: host.querySelector('[data-prediction-1h-available]'),
+            prediction2hAvailable: host.querySelector('[data-prediction-2h-available]'),
+            prediction3hAvailable: host.querySelector('[data-prediction-3h-available]'),
             open247Count: host.querySelector('[data-prediction-open247]'),
             limitedHoursCount: host.querySelector('[data-prediction-limited-hours]'),
             latestTableBody: host.querySelector('[data-latest-table-body]')
@@ -368,11 +369,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (summaryFields.average) {
             summaryFields.average.textContent = formatPercentage(summary.avg_occupancy);
         }
-        if (summaryFields.predictionCurrentAvailable) {
-            summaryFields.predictionCurrentAvailable.textContent = formatNumber(predictionSummary.current_window_available_total);
+        if (summaryFields.prediction1hAvailable) {
+            summaryFields.prediction1hAvailable.textContent = formatNumber(predictionSummary.horizon_1h_available_total);
         }
-        if (summaryFields.predictionNextAvailable) {
-            summaryFields.predictionNextAvailable.textContent = formatNumber(predictionSummary.next_window_available_total);
+        if (summaryFields.prediction2hAvailable) {
+            summaryFields.prediction2hAvailable.textContent = formatNumber(predictionSummary.horizon_2h_available_total);
+        }
+        if (summaryFields.prediction3hAvailable) {
+            summaryFields.prediction3hAvailable.textContent = formatNumber(predictionSummary.horizon_3h_available_total);
         }
         if (summaryFields.open247Count) {
             summaryFields.open247Count.textContent = formatNumber(predictionSummary.open_24_7_count);
@@ -406,7 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const renderFacilitiesTableRows = (facilities, payload) => {
         if (!Array.isArray(facilities) || facilities.length === 0) {
-            return '<tr><td colspan="10" class="empty-state">No facilities match the current filters.</td></tr>';
+            return '<tr><td colspan="11" class="empty-state">No facilities match the current filters.</td></tr>';
         }
 
         const predictionMap = payload && typeof payload === 'object' && payload.hourly_predictions && typeof payload.hourly_predictions === 'object'
@@ -417,13 +421,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const percent = Math.max(0, Math.min(100, (Number(row.occupancy_rate) || 0) * 100));
             const facilityId = encodeURIComponent(String(row.facility_id ?? ''));
             const prediction = predictionMap[String(row.facility_id ?? '')] || {};
-            const currentWindow = prediction.current_window || null;
-            const nextWindow = prediction.next_window || null;
-            const currentHtml = currentWindow
-                ? `<strong>${escapeHtml(formatNumber(currentWindow.predicted_available))} free</strong><br><span class="status-pill ${escapeHtml(availabilityBadgeClass(currentWindow.predicted_class))}">${escapeHtml(currentWindow.predicted_class || 'Available')}</span>`
+            const horizon1 = prediction.horizon_1h || null;
+            const horizon2 = prediction.horizon_2h || null;
+            const horizon3 = prediction.horizon_3h || null;
+            const horizon1Html = horizon1
+                ? `<strong>${escapeHtml(formatNumber(horizon1.predicted_available))} free</strong><br><span class="status-pill ${escapeHtml(availabilityBadgeClass(horizon1.predicted_class))}">${escapeHtml(horizon1.predicted_class || 'Available')}</span>`
                 : '<span class="muted">No forecast</span>';
-            const nextHtml = nextWindow
-                ? `<strong>${escapeHtml(formatNumber(nextWindow.predicted_available))} free</strong><br><span class="status-pill ${escapeHtml(availabilityBadgeClass(nextWindow.predicted_class))}">${escapeHtml(nextWindow.predicted_class || 'Available')}</span>`
+            const horizon2Html = horizon2
+                ? `<strong>${escapeHtml(formatNumber(horizon2.predicted_available))} free</strong><br><span class="status-pill ${escapeHtml(availabilityBadgeClass(horizon2.predicted_class))}">${escapeHtml(horizon2.predicted_class || 'Available')}</span>`
+                : '<span class="muted">No forecast</span>';
+            const horizon3Html = horizon3
+                ? `<strong>${escapeHtml(formatNumber(horizon3.predicted_available))} free</strong><br><span class="status-pill ${escapeHtml(availabilityBadgeClass(horizon3.predicted_class))}">${escapeHtml(horizon3.predicted_class || 'Available')}</span>`
                 : '<span class="muted">No forecast</span>';
             const operatingHoursNote = prediction.operating_hours_note || 'Operating hours not provided';
 
@@ -436,8 +444,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>${escapeHtml(formatNumber(row.available))}</td>
                     <td><strong>${escapeHtml(formatPercentage(percent))}</strong><div class="progress" style="margin-top:8px;"><span style="width: ${percent}%"></span></div></td>
                     <td><span class="status-pill ${escapeHtml(availabilityBadgeClass(row.availability_class))}">${escapeHtml(row.availability_class ?? 'Available')}</span></td>
-                    <td>${currentHtml}</td>
-                    <td>${nextHtml}</td>
+                    <td>${horizon1Html}</td>
+                    <td>${horizon2Html}</td>
+                    <td>${horizon3Html}</td>
                     <td>${escapeHtml(operatingHoursNote)}</td>
                 </tr>
             `;
@@ -589,8 +598,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div class="stat-item"><span>Occupied</span><strong>${escapeHtml(formatNumber(selectedSummary.occupied))}</strong></div>
                             <div class="stat-item"><span>Available</span><strong>${escapeHtml(formatNumber(selectedSummary.available))}</strong></div>
                             <div class="stat-item"><span>Status</span><strong><span class="status-pill ${escapeHtml(availabilityBadgeClass(selectedSummary.availability_class))}">${escapeHtml(selectedSummary.availability_class ?? 'Available')}</span></strong></div>
-                            ${selectedPrediction ? `<div class="stat-item"><span>${escapeHtml(windows.current_until_label || 'Forecast later this hour (to end of current hour)')}</span><strong>${escapeHtml(formatNumber(selectedPrediction.current_window?.predicted_available ?? 0))} free (${escapeHtml(selectedPrediction.current_window?.predicted_class || 'Available')})</strong></div>` : ''}
-                            ${selectedPrediction ? `<div class="stat-item"><span>Predicted ${escapeHtml(windows.next_label || 'Next')}</span><strong>${escapeHtml(formatNumber(selectedPrediction.next_window?.predicted_available ?? 0))} free (${escapeHtml(selectedPrediction.next_window?.predicted_class || 'Available')})</strong></div>` : ''}
+                            ${selectedPrediction ? `<div class="stat-item"><span>${escapeHtml(windows.horizon_1h_detail_label || '+1h forecast')}</span><strong>${escapeHtml(formatNumber(selectedPrediction.horizon_1h?.predicted_available ?? 0))} free (${escapeHtml(selectedPrediction.horizon_1h?.predicted_class || 'Available')})</strong></div>` : ''}
+                            ${selectedPrediction ? `<div class="stat-item"><span>${escapeHtml(windows.horizon_2h_detail_label || '+2h forecast')}</span><strong>${escapeHtml(formatNumber(selectedPrediction.horizon_2h?.predicted_available ?? 0))} free (${escapeHtml(selectedPrediction.horizon_2h?.predicted_class || 'Available')})</strong></div>` : ''}
+                            ${selectedPrediction ? `<div class="stat-item"><span>${escapeHtml(windows.horizon_3h_detail_label || '+3h forecast')}</span><strong>${escapeHtml(formatNumber(selectedPrediction.horizon_3h?.predicted_available ?? 0))} free (${escapeHtml(selectedPrediction.horizon_3h?.predicted_class || 'Available')})</strong></div>` : ''}
                             ${selectedPrediction ? `<div class="stat-item"><span>Operating hours</span><strong>${escapeHtml(selectedPrediction.operating_hours_note || 'Operating hours not provided')}</strong></div>` : ''}
                         </div>
                     </article>
@@ -1269,7 +1279,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const renderEventsTableRows = (rows) => {
         if (!Array.isArray(rows) || rows.length === 0) {
-            return '<tr><td colspan="12" class="empty-state">No nearby facilities match the current filters.</td></tr>';
+            return '<tr><td colspan="11" class="empty-state">No nearby facilities match the current filters.</td></tr>';
         }
 
         return rows.map((row) => {
@@ -1284,18 +1294,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? '<span class="tag closest-badge">Closest</span>'
                 : '';
             const horizon1 = isPredictionDay ? formatNumber(row.horizon_1h_available) : 'Event day';
+            const horizon2 = isPredictionDay ? formatNumber(row.horizon_2h_available) : 'Event day';
             const horizon3 = isPredictionDay ? formatNumber(row.horizon_3h_available) : 'Event day';
-            const horizon6 = isPredictionDay ? formatNumber(row.horizon_6h_available) : 'Event day';
-            const horizon12 = isPredictionDay ? formatNumber(row.horizon_12h_available) : 'Event day';
             const eventLiftValue = isPredictionDay ? `<strong>+${escapeHtml(formatNumber(row.event_lift))}</strong>` : 'Event day';
             let occCell;
             if (isPredictionDay) {
                 const cap = Math.max(1, Number(row.capacity || 1));
                 const h1Occ = (Math.round(((cap - Number(row.horizon_1h_available ?? 0)) / cap) * 1000) / 10).toFixed(1);
+                const h2Occ = (Math.round(((cap - Number(row.horizon_2h_available ?? 0)) / cap) * 1000) / 10).toFixed(1);
                 const h3Occ = (Math.round(((cap - Number(row.horizon_3h_available ?? 0)) / cap) * 1000) / 10).toFixed(1);
-                const h6Occ = (Math.round(((cap - Number(row.horizon_6h_available ?? 0)) / cap) * 1000) / 10).toFixed(1);
-                const h12Occ = (Math.round(((cap - Number(row.horizon_12h_available ?? 0)) / cap) * 1000) / 10).toFixed(1);
-                occCell = `<small style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">Current</small><strong>${currentPercent.toFixed(1)}%</strong><div class="progress" style="margin-top:4px;margin-bottom:8px;"><span style="width:${currentPercent}%"></span></div><small style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Predicted</small><div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;font-size:12px;"><span>+1H: <strong>${h1Occ}%</strong></span><span>+3H: <strong>${h3Occ}%</strong></span><span>+6H: <strong>${h6Occ}%</strong></span><span>+12H: <strong>${h12Occ}%</strong></span></div>`;
+                occCell = `<small style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">Current</small><strong>${currentPercent.toFixed(1)}%</strong><div class="progress" style="margin-top:4px;margin-bottom:8px;"><span style="width:${currentPercent}%"></span></div><small style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Predicted</small><div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;font-size:12px;"><span>+1H: <strong>${h1Occ}%</strong></span><span>+2H: <strong>${h2Occ}%</strong></span><span>+3H: <strong>${h3Occ}%</strong></span></div>`;
             } else {
                 occCell = `<strong>${currentPercent.toFixed(1)}%</strong><div class="progress" style="margin-top:8px;"><span style="width:${currentPercent}%"></span></div>`;
             }
@@ -1312,9 +1320,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>${escapeHtml(formatNumber(row.capacity))}</td>
                     <td>${escapeHtml(formatNumber(row.current_available))}</td>
                     <td>${escapeHtml(horizon1)}</td>
+                    <td>${escapeHtml(horizon2)}</td>
                     <td>${escapeHtml(horizon3)}</td>
-                    <td>${escapeHtml(horizon6)}</td>
-                    <td>${escapeHtml(horizon12)}</td>
                     <td>${eventLiftValue}</td>
                     <td>${occCell}</td>
                     <td><span class="status-pill ${escapeHtml(availabilityBadgeClass(statusLabel))}">${escapeHtml(statusLabel)}</span></td>
@@ -1341,7 +1348,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (tableDescription) {
             const radiusLabel = formatDistanceKm(selectedEvent && selectedEvent.nearby_radius_km);
-            tableDescription.textContent = `Every row below shows a tracked facility within roughly ${radiusLabel} km of the venue. Event-based prediction appears only on the event day.`;
+            tableDescription.textContent = `Every row below shows a tracked facility within roughly ${radiusLabel} km of the venue. Event-based prediction appears only on the event day and is limited to +1h, +2h, and +3h.`;
         }
         const occHeader = host.querySelector('[data-occ-header]');
         if (occHeader) {
@@ -1355,7 +1362,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             tableBody.innerHTML = filteredRows.length === 0
-                ? '<tr><td colspan="12" class="empty-state">No nearby facilities match the current filters.</td></tr>'
+                ? '<tr><td colspan="11" class="empty-state">No nearby facilities match the current filters.</td></tr>'
                 : renderEventsTableRows(filteredRows);
         }
     };

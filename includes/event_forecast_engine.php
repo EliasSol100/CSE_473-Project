@@ -252,7 +252,7 @@ function events_build_forecast(array $event, array $facilities): array
     $totalWeight = 0.0;
     $eventTiming = events_event_timing_meta($start, $end, $now);
     $isPredictionDay = (bool) ($eventTiming['is_prediction_day'] ?? false);
-    $horizonHours = [1, 3, 6, 12];
+    $horizonHours = [1, 2, 3];
     $horizonLabels = [];
 
     foreach ($horizonHours as $hoursAhead) {
@@ -380,9 +380,8 @@ function events_build_forecast(array $event, array $facilities): array
             'distance_km' => $distanceKm,
             'horizon_forecasts' => $horizonForecasts,
             'horizon_1h_available' => $isPredictionDay ? (int) ($horizonForecasts['1']['predicted_available'] ?? 0) : null,
+            'horizon_2h_available' => $isPredictionDay ? (int) ($horizonForecasts['2']['predicted_available'] ?? 0) : null,
             'horizon_3h_available' => $isPredictionDay ? (int) ($horizonForecasts['3']['predicted_available'] ?? 0) : null,
-            'horizon_6h_available' => $isPredictionDay ? (int) ($horizonForecasts['6']['predicted_available'] ?? 0) : null,
-            'horizon_12h_available' => $isPredictionDay ? (int) ($horizonForecasts['12']['predicted_available'] ?? 0) : null,
         ];
     }
 

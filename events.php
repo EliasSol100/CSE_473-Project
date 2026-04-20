@@ -26,7 +26,7 @@ $eventsSyncUrl = 'api/events_summary.php';
     <div class="section-title">
         <div>
             <h2>Events outlook</h2>
-            <p>Real Sydney events across the next seven Sydney calendar days, paired with a forecast for every tracked parking facility in the live API network.</p>
+            <p>Real Sydney events across the next seven Sydney calendar days, paired with short-range +1h, +2h, and +3h parking forecasts for the tracked live API network.</p>
         </div>
         <div class="tag-row section-tags">
             <span class="tag" data-events-window>Forecast window: <?= h($eventsPayload['window_label']) ?></span>
@@ -46,7 +46,7 @@ $eventsSyncUrl = 'api/events_summary.php';
             <article class="notice">
                 <h3>Tracked events</h3>
                 <div class="metric" data-events-tracked-count><?= h(format_number(count($events))) ?></div>
-                <p class="muted">Each card below is tied to a real event source and forecasts parking pressure for the same day and time window.</p>
+                <p class="muted">Each card below is tied to a real event source and forecasts parking pressure through short-range event-day windows only.</p>
             </article>
             <article class="notice">
                 <h3>Selected event spillover</h3>

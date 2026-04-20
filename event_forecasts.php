@@ -37,7 +37,7 @@ $nearbyRadiusLabel = $selectedEvent
     <div class="section-title">
         <div>
             <h2>Event forecast</h2>
-            <p>Show nearby parking within 10 km and the closest facility now. Event-based prediction appears only on the event day.</p>
+            <p>Show nearby parking within 10 km and the closest facility now, with event-day prediction limited to +1h, +2h, and +3h for better short-range accuracy.</p>
         </div>
         <div class="tag-row section-tags">
             <span class="tag" data-events-window>Forecast window: <?= h($eventsPayload['window_label']) ?></span>
@@ -150,7 +150,7 @@ $nearbyRadiusLabel = $selectedEvent
             <div class="section-title">
                 <div>
                     <h2>Nearby facility forecasts for the selected event</h2>
-                    <p data-events-table-description>Every row below shows a tracked facility within roughly <?= h($nearbyRadiusLabel) ?> km of the venue. Event-based prediction appears only on the event day.</p>
+                    <p data-events-table-description>Every row below shows a tracked facility within roughly <?= h($nearbyRadiusLabel) ?> km of the venue. Event-based prediction appears only on the event day and is limited to +1h, +2h, and +3h.</p>
                 </div>
                 <p class="muted" style="margin:0;" data-events-table-count>Showing <?= h(format_number(count($selectedEvent['nearby_ranked'] ?? []))) ?> nearby facilities</p>
             </div>
@@ -175,10 +175,10 @@ $nearbyRadiusLabel = $selectedEvent
 
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Facility</th><th>Distance</th><th>Capacity</th><th>Current Available</th><th>+1h</th><th>+3h</th><th>+6h</th><th>+12h</th><th>Event Lift (event day only)</th><th data-occ-header><?= ($selectedEvent['is_prediction_day'] ?? false) ? 'Current &amp; Predicted Occupancy' : 'Current Occupancy' ?></th><th>Status</th><th>Details</th></tr></thead>
+                    <thead><tr><th>Facility</th><th>Distance</th><th>Capacity</th><th>Current Available</th><th>+1h</th><th>+2h</th><th>+3h</th><th>Event Lift (event day only)</th><th data-occ-header><?= ($selectedEvent['is_prediction_day'] ?? false) ? 'Current &amp; Predicted Occupancy' : 'Current Occupancy' ?></th><th>Status</th><th>Details</th></tr></thead>
                     <tbody data-events-table-body>
                         <?php if (($selectedEvent['nearby_ranked'] ?? []) === []): ?>
-                            <tr><td colspan="12" class="empty-state">No tracked parking facilities are within <?= h($nearbyRadiusLabel) ?> km of this event venue.</td></tr>
+                            <tr><td colspan="11" class="empty-state">No tracked parking facilities are within <?= h($nearbyRadiusLabel) ?> km of this event venue.</td></tr>
                         <?php else: ?>
                             <?php foreach (($selectedEvent['nearby_ranked'] ?? []) as $row): ?>
                                 <?php
@@ -186,9 +186,8 @@ $nearbyRadiusLabel = $selectedEvent
                                     if ($selectedEvent['is_prediction_day'] ?? false) {
                                         $_cap = max(1, (int) ($row['capacity'] ?? 1));
                                         $h1Occ = round(($_cap - (int) ($row['horizon_1h_available'] ?? 0)) / $_cap * 100, 1);
+                                        $h2Occ = round(($_cap - (int) ($row['horizon_2h_available'] ?? 0)) / $_cap * 100, 1);
                                         $h3Occ = round(($_cap - (int) ($row['horizon_3h_available'] ?? 0)) / $_cap * 100, 1);
-                                        $h6Occ = round(($_cap - (int) ($row['horizon_6h_available'] ?? 0)) / $_cap * 100, 1);
-                                        $h12Occ = round(($_cap - (int) ($row['horizon_12h_available'] ?? 0)) / $_cap * 100, 1);
                                     }
                                 ?>
                                 <tr data-facility-row data-search="<?= h(strtolower($row['facility_id'] . ' ' . $row['facility_name'] . ' ' . $row['predicted_status'])) ?>">
@@ -204,9 +203,8 @@ $nearbyRadiusLabel = $selectedEvent
                                     <td><?= h(format_number($row['capacity'])) ?></td>
                                     <td><?= h(format_number($row['current_available'] ?? 0)) ?></td>
                                     <td><?= ($selectedEvent['is_prediction_day'] ?? false) ? h(format_number($row['horizon_1h_available'] ?? 0)) : 'Event day' ?></td>
+                                    <td><?= ($selectedEvent['is_prediction_day'] ?? false) ? h(format_number($row['horizon_2h_available'] ?? 0)) : 'Event day' ?></td>
                                     <td><?= ($selectedEvent['is_prediction_day'] ?? false) ? h(format_number($row['horizon_3h_available'] ?? 0)) : 'Event day' ?></td>
-                                    <td><?= ($selectedEvent['is_prediction_day'] ?? false) ? h(format_number($row['horizon_6h_available'] ?? 0)) : 'Event day' ?></td>
-                                    <td><?= ($selectedEvent['is_prediction_day'] ?? false) ? h(format_number($row['horizon_12h_available'] ?? 0)) : 'Event day' ?></td>
                                     <td><?= ($selectedEvent['is_prediction_day'] ?? false) ? '<strong>+' . h(format_number($row['event_lift'])) . '</strong>' : 'Event day' ?></td>
                                     <td>
                                         <?php if ($selectedEvent['is_prediction_day'] ?? false): ?>
@@ -216,9 +214,8 @@ $nearbyRadiusLabel = $selectedEvent
                                             <small style="display:block;font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Predicted</small>
                                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;font-size:12px;">
                                                 <span>+1H: <strong><?= h(number_format($h1Occ, 1)) ?>%</strong></span>
+                                                <span>+2H: <strong><?= h(number_format($h2Occ, 1)) ?>%</strong></span>
                                                 <span>+3H: <strong><?= h(number_format($h3Occ, 1)) ?>%</strong></span>
-                                                <span>+6H: <strong><?= h(number_format($h6Occ, 1)) ?>%</strong></span>
-                                                <span>+12H: <strong><?= h(number_format($h12Occ, 1)) ?>%</strong></span>
                                             </div>
                                         <?php else: ?>
                                             <strong><?= h(format_percentage($currentPercent)) ?></strong>
