@@ -5,6 +5,7 @@ python/.env
 python/__pycache__/
 **/__pycache__/
 *.pyc
+python/models/
 
 # Logs
 logs/

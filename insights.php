@@ -22,7 +22,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="section-title">
         <div>
             <h2>Insights and model performance</h2>
-            <p>Analytical highlights that explain utilization behavior and baseline performance summaries from the best available data source.</p>
+            <p>Analytical highlights that explain utilization behavior and the current best available model performance summaries.</p>
         </div>
         <div class="tag-row section-tags">
             <span class="tag" data-insights-last-refresh>Latest network refresh: <?= h(display_datetime($insightsPayload['summary']['last_refresh'] ?? null)) ?></span>
@@ -33,7 +33,7 @@ require_once __DIR__ . '/includes/header.php';
     <section class="info-grid">
         <article class="notice"><h3>Peak observed hour</h3><p class="muted">The highest average occupancy appears at <strong data-insights-peak-hour><?= h(sprintf('%02d:00', (int) ($peak['hour'] ?? 0))) ?></strong>, reaching <strong data-insights-peak-rate><?= h(format_percentage($peak['average_occupancy'] ?? 0)) ?></strong>.</p></article>
         <article class="notice"><h3>Coverage window</h3><p class="muted">Current records include <strong data-insights-observations><?= h(format_number($dataset['observations'] ?? 0)) ?></strong> observations from <strong data-insights-min-time><?= h(display_datetime($dataset['min_time'] ?? null)) ?></strong> to <strong data-insights-max-time><?= h(display_datetime($dataset['max_time'] ?? null)) ?></strong>.</p></article>
-        <article class="notice"><h3>Classification context</h3><p class="muted">Average baseline classification accuracy is <strong data-insights-avg-accuracy><?= h(format_percentage($insightsPayload['avg_accuracy'] ?? 0, 1)) ?></strong>. <span data-insights-classification-context><?= h($insightsPayload['classification_context_note'] ?? '') ?></span></p></article>
+        <article class="notice"><h3>Classification context</h3><p class="muted">Average classification accuracy is <strong data-insights-avg-accuracy><?= h(format_percentage($insightsPayload['avg_accuracy'] ?? 0, 1)) ?></strong>. <span data-insights-classification-context><?= h($insightsPayload['classification_context_note'] ?? '') ?></span></p></article>
     </section>
 
     <section class="chart-grid">
@@ -43,7 +43,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <section class="grid-two" style="margin-bottom:24px;">
         <article class="table-card">
-            <h3>Baseline regression performance (lowest RMSE)</h3>
+            <h3>XGBoost regression performance (lowest RMSE)</h3>
             <p class="muted" data-insights-regression-note><?= h($insightsPayload['regression_note'] ?? '') ?></p>
             <div class="table-wrap">
                 <table>
@@ -68,7 +68,7 @@ require_once __DIR__ . '/includes/header.php';
         </article>
 
         <article class="table-card">
-            <h3>Baseline classification accuracy by facility</h3>
+            <h3>XGBoost classification accuracy by facility</h3>
             <p class="muted" data-insights-classification-note><?= h($insightsPayload['classification_note'] ?? '') ?></p>
             <div class="table-wrap">
                 <table>

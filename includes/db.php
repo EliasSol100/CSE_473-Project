@@ -56,6 +56,8 @@ function db_ensure_runtime_schema(mysqli $connection): void
         return;
     }
 
+    db_ensure_model_tables($connection);
+
     if (db_table_exists($connection, 'parking_facilities')) {
         if (!db_table_has_column($connection, 'parking_facilities', 'is_open_24_7')) {
             $connection->query(
@@ -98,6 +100,80 @@ function db_ensure_runtime_schema(mysqli $connection): void
 
     db_classify_snapshot_sources($connection, $addedSourceColumn);
     $bootstrapped = true;
+}
+
+function db_ensure_model_tables(mysqli $connection): void
+{
+    $connection->query(
+        "CREATE TABLE IF NOT EXISTS model_runs (
+            run_id INT AUTO_INCREMENT PRIMARY KEY,
+            model_name VARCHAR(64) NOT NULL,
+            snapshot_source VARCHAR(16) NOT NULL,
+            run_status VARCHAR(16) NOT NULL DEFAULT 'completed',
+            trained_at DATETIME NOT NULL,
+            training_rows INT NOT NULL DEFAULT 0,
+            validation_rows INT NOT NULL DEFAULT 0,
+            feature_count INT NOT NULL DEFAULT 0,
+            notes TEXT NULL,
+            KEY idx_model_runs_lookup (model_name, snapshot_source, run_status, trained_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $connection->query(
+        "CREATE TABLE IF NOT EXISTS facility_metrics (
+            metric_id INT AUTO_INCREMENT PRIMARY KEY,
+            run_id INT NOT NULL,
+            facility_id VARCHAR(20) NOT NULL,
+            sample_size INT NOT NULL,
+            mae DECIMAL(10,6) NULL,
+            rmse DECIMAL(10,6) NULL,
+            r2 DECIMAL(10,6) NULL,
+            accuracy DECIMAL(10,6) NULL,
+            created_at DATETIME NOT NULL,
+            UNIQUE KEY uniq_facility_metrics_run (run_id, facility_id),
+            KEY idx_facility_metrics_run (run_id),
+            KEY idx_facility_metrics_facility (facility_id),
+            CONSTRAINT fk_facility_metrics_run FOREIGN KEY (run_id) REFERENCES model_runs(run_id)
+                ON DELETE CASCADE ON UPDATE CASCADE,
+            CONSTRAINT fk_facility_metrics_facility FOREIGN KEY (facility_id) REFERENCES parking_facilities(facility_id)
+                ON DELETE CASCADE ON UPDATE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $connection->query(
+        "CREATE TABLE IF NOT EXISTS predictions (
+            pred_id INT AUTO_INCREMENT PRIMARY KEY,
+            run_id INT NOT NULL,
+            facility_id VARCHAR(20) NOT NULL,
+            hours_ahead TINYINT NOT NULL,
+            target_time DATETIME NULL,
+            predicted_occupancy_rate DECIMAL(7,4) NOT NULL,
+            predicted_occupied INT NOT NULL,
+            predicted_available INT NOT NULL,
+            predicted_class VARCHAR(30) NOT NULL,
+            created_at DATETIME NOT NULL,
+            UNIQUE KEY uniq_predictions_run (run_id, facility_id, hours_ahead),
+            KEY idx_predictions_lookup (run_id, facility_id, hours_ahead),
+            CONSTRAINT fk_predictions_run FOREIGN KEY (run_id) REFERENCES model_runs(run_id)
+                ON DELETE CASCADE ON UPDATE CASCADE,
+            CONSTRAINT fk_predictions_facility FOREIGN KEY (facility_id) REFERENCES parking_facilities(facility_id)
+                ON DELETE CASCADE ON UPDATE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $connection->query(
+        "CREATE TABLE IF NOT EXISTS model_artifacts (
+            artifact_id INT AUTO_INCREMENT PRIMARY KEY,
+            run_id INT NOT NULL,
+            artifact_type VARCHAR(32) NOT NULL,
+            horizon_hours TINYINT NULL,
+            file_path VARCHAR(255) NOT NULL,
+            created_at DATETIME NOT NULL,
+            KEY idx_model_artifacts_run (run_id),
+            CONSTRAINT fk_model_artifacts_run FOREIGN KEY (run_id) REFERENCES model_runs(run_id)
+                ON DELETE CASCADE ON UPDATE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
 }
 
 function db_table_exists(mysqli $connection, string $table): bool

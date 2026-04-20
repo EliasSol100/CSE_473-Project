@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/ml_model.php';
 
 const LIVE_COLLECTOR_BASE_URL = 'https://api.transport.nsw.gov.au/v1';
 const LIVE_COLLECTOR_LIST_URL = LIVE_COLLECTOR_BASE_URL . '/carpark';
@@ -152,6 +153,20 @@ function live_collector_run(bool $force = false): array
                 'interval_seconds' => $result['interval_seconds'],
             ];
             live_collector_write_state($stateUpdate);
+
+            $modelRefresh = ml_model_refresh_if_due('live', $pageShouldReload);
+            if (($modelRefresh['status'] ?? '') === 'completed') {
+                live_collector_log(
+                    sprintf(
+                        'XGBoost model refreshed after live sync (run_id=%s, rmse=%s, accuracy=%s).',
+                        (string) ($modelRefresh['run_id'] ?? 'n/a'),
+                        (string) ($modelRefresh['overall_rmse'] ?? 'n/a'),
+                        (string) ($modelRefresh['overall_accuracy'] ?? 'n/a')
+                    )
+                );
+            } elseif (($modelRefresh['status'] ?? '') === 'error') {
+                live_collector_log('XGBoost refresh failed after live sync: ' . (string) ($modelRefresh['output'] ?? $modelRefresh['message'] ?? 'unknown error'));
+            }
 
             live_collector_log(
                 sprintf(

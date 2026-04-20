@@ -5,6 +5,10 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS model_classification_metrics;
 DROP TABLE IF EXISTS model_regression_metrics;
+DROP TABLE IF EXISTS model_artifacts;
+DROP TABLE IF EXISTS predictions;
+DROP TABLE IF EXISTS facility_metrics;
+DROP TABLE IF EXISTS model_runs;
 DROP TABLE IF EXISTS occupancy_snapshots;
 DROP TABLE IF EXISTS parking_facilities;
 
@@ -59,6 +63,69 @@ CREATE TABLE model_classification_metrics (
     accuracy DECIMAL(10,6) NULL,
     KEY idx_cls_metrics_facility (facility_id),
     CONSTRAINT fk_cls_metrics_facility FOREIGN KEY (facility_id) REFERENCES parking_facilities(facility_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE model_runs (
+    run_id INT AUTO_INCREMENT PRIMARY KEY,
+    model_name VARCHAR(64) NOT NULL,
+    snapshot_source VARCHAR(16) NOT NULL,
+    run_status VARCHAR(16) NOT NULL DEFAULT 'completed',
+    trained_at DATETIME NOT NULL,
+    training_rows INT NOT NULL DEFAULT 0,
+    validation_rows INT NOT NULL DEFAULT 0,
+    feature_count INT NOT NULL DEFAULT 0,
+    notes TEXT NULL,
+    KEY idx_model_runs_lookup (model_name, snapshot_source, run_status, trained_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE facility_metrics (
+    metric_id INT AUTO_INCREMENT PRIMARY KEY,
+    run_id INT NOT NULL,
+    facility_id VARCHAR(20) NOT NULL,
+    sample_size INT NOT NULL,
+    mae DECIMAL(10,6) NULL,
+    rmse DECIMAL(10,6) NULL,
+    r2 DECIMAL(10,6) NULL,
+    accuracy DECIMAL(10,6) NULL,
+    created_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_facility_metrics_run (run_id, facility_id),
+    KEY idx_facility_metrics_run (run_id),
+    KEY idx_facility_metrics_facility (facility_id),
+    CONSTRAINT fk_facility_metrics_run FOREIGN KEY (run_id) REFERENCES model_runs(run_id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_facility_metrics_facility FOREIGN KEY (facility_id) REFERENCES parking_facilities(facility_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE predictions (
+    pred_id INT AUTO_INCREMENT PRIMARY KEY,
+    run_id INT NOT NULL,
+    facility_id VARCHAR(20) NOT NULL,
+    hours_ahead TINYINT NOT NULL,
+    target_time DATETIME NULL,
+    predicted_occupancy_rate DECIMAL(7,4) NOT NULL,
+    predicted_occupied INT NOT NULL,
+    predicted_available INT NOT NULL,
+    predicted_class VARCHAR(30) NOT NULL,
+    created_at DATETIME NOT NULL,
+    UNIQUE KEY uniq_predictions_run (run_id, facility_id, hours_ahead),
+    KEY idx_predictions_lookup (run_id, facility_id, hours_ahead),
+    CONSTRAINT fk_predictions_run FOREIGN KEY (run_id) REFERENCES model_runs(run_id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_predictions_facility FOREIGN KEY (facility_id) REFERENCES parking_facilities(facility_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE model_artifacts (
+    artifact_id INT AUTO_INCREMENT PRIMARY KEY,
+    run_id INT NOT NULL,
+    artifact_type VARCHAR(32) NOT NULL,
+    horizon_hours TINYINT NULL,
+    file_path VARCHAR(255) NOT NULL,
+    created_at DATETIME NOT NULL,
+    KEY idx_model_artifacts_run (run_id),
+    CONSTRAINT fk_model_artifacts_run FOREIGN KEY (run_id) REFERENCES model_runs(run_id)
         ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

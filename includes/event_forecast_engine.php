@@ -35,9 +35,11 @@ function events_upcoming_bundle(?DateTimeImmutable $referenceNow = null): array
 
     usort($upcoming, fn(array $a, array $b) => strcmp($a['starts_at'], $b['starts_at']));
 
-    $facilities = events_prepare_facilities(latest_snapshots());
+    $latestSnapshots = latest_snapshots();
+    $facilities = events_prepare_facilities($latestSnapshots);
+    $modelPredictions = ml_model_predictions_lookup(snapshot_data_source());
     $forecastedEvents = array_map(
-        fn(array $event) => events_build_forecast($event, $facilities),
+        fn(array $event) => events_build_forecast($event, $facilities, $modelPredictions),
         $upcoming
     );
 
@@ -239,7 +241,7 @@ function events_prepare_facilities(array $latest): array
     return $facilities;
 }
 
-function events_build_forecast(array $event, array $facilities): array
+function events_build_forecast(array $event, array $facilities, array $modelPredictions = []): array
 {
     $now = new DateTimeImmutable('now', events_timezone());
     $start = events_parse_datetime($event['starts_at']);
@@ -272,6 +274,9 @@ function events_build_forecast(array $event, array $facilities): array
 
     $forecasts = [];
     foreach ($facilities as $facility) {
+        $facilityModelPredictions = is_array($modelPredictions[$facility['facility_id']] ?? null)
+            ? $modelPredictions[$facility['facility_id']]
+            : [];
         $profile = $baselineProfiles[$facility['facility_id']] ?? $fallbackProfiles[$facility['facility_id']] ?? null;
         $currentProfile = $currentProfiles[$facility['facility_id']] ?? $currentFallbackProfiles[$facility['facility_id']] ?? null;
         $baselineOccupied = $profile !== null
@@ -335,10 +340,17 @@ function events_build_forecast(array $event, array $facilities): array
             $currentAvgOccupied = $currentProfile !== null
                 ? (float) ($currentProfile['avg_occupied'] ?? $facility['occupied'])
                 : (float) $facility['occupied'];
+            $modelPrediction = is_array($facilityModelPredictions[(string) $hoursAhead] ?? null)
+                ? $facilityModelPredictions[(string) $hoursAhead]
+                : null;
 
-            $targetBaselineOccupied = $hourProfile !== null
-                ? (int) round((((float) $hourProfile['avg_occupied']) * 0.70) + ($facility['occupied'] * 0.30))
-                : (int) round(($currentAvgOccupied * 0.55) + ($facility['occupied'] * 0.45));
+            if ($modelPrediction !== null) {
+                $targetBaselineOccupied = (int) ($modelPrediction['predicted_occupied'] ?? 0);
+            } else {
+                $targetBaselineOccupied = $hourProfile !== null
+                    ? (int) round((((float) $hourProfile['avg_occupied']) * 0.70) + ($facility['occupied'] * 0.30))
+                    : (int) round(($currentAvgOccupied * 0.55) + ($facility['occupied'] * 0.45));
+            }
             $targetBaselineOccupied = max(0, min((int) $facility['capacity'], $targetBaselineOccupied));
 
             $targetEventFactor = events_event_activity_factor($start, $end, $targetTime);

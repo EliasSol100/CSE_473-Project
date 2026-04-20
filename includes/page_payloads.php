@@ -73,20 +73,25 @@ function insights_page_payload(): array
     $topAverage = top_average_occupancy(10);
     $capacityLeaders = capacity_leaders(10);
     $metricsSource = insights_metrics_source();
+    $predictionModel = parking_prediction_model();
     $allRegMetrics = regression_metrics_for_source($metricsSource);
     $allClsMetrics = classification_metrics_for_source($metricsSource);
     $regMetrics = array_slice($allRegMetrics, 0, 10);
     $clsMetrics = array_slice($allClsMetrics, 0, 10);
     $metricsSourceLabel = $metricsSource === 'live' ? 'Live collector history' : 'Imported SQL baseline';
-    $classificationContextNote = $metricsSource === 'live'
-        ? 'Average baseline classification accuracy is calculated from real sequential facility history, using the previous recorded status as the next-status baseline.'
-        : 'The live collector is not currently active, so this view is using the imported SQL baseline metrics as a fallback.';
-    $regressionNote = $metricsSource === 'live'
-        ? 'Uses the previous recorded occupancy rate at each facility as the next-reading baseline prediction.'
-        : 'Showing the regression metrics imported from the SQL setup file as the current fallback baseline.';
-    $classificationNote = $metricsSource === 'live'
-        ? 'Shows how often the previous recorded availability class matched the next observed class for each facility.'
-        : 'Showing the classification metrics imported from the SQL setup file as the current fallback baseline.';
+    if ($predictionModel === 'xgboost') {
+        $classificationContextNote = 'Average classification accuracy is calculated from the current XGBoost model, validated against real held-out facility history.';
+        $regressionNote = 'Shows the lowest RMSE facilities from the current XGBoost occupancy-rate model using real historical training data.';
+        $classificationNote = 'Shows how often the XGBoost status model correctly predicted the next observed availability class for each facility.';
+    } elseif ($metricsSource === 'live') {
+        $classificationContextNote = 'Average baseline classification accuracy is calculated from real sequential facility history, using the previous recorded status as the next-status baseline.';
+        $regressionNote = 'Uses the previous recorded occupancy rate at each facility as the next-reading baseline prediction.';
+        $classificationNote = 'Shows how often the previous recorded availability class matched the next observed class for each facility.';
+    } else {
+        $classificationContextNote = 'The live collector is not currently active, so this view is using the imported SQL baseline metrics as a fallback.';
+        $regressionNote = 'Showing the regression metrics imported from the SQL setup file as the current fallback baseline.';
+        $classificationNote = 'Showing the classification metrics imported from the SQL setup file as the current fallback baseline.';
+    }
 
     return [
         'summary' => summary_metrics(),
@@ -97,6 +102,7 @@ function insights_page_payload(): array
         'regression_metrics' => $regMetrics,
         'classification_metrics' => $clsMetrics,
         'avg_accuracy' => insights_average_accuracy($allClsMetrics),
+        'prediction_model' => $predictionModel,
         'metrics_source' => $metricsSource,
         'metrics_source_label' => $metricsSourceLabel,
         'classification_context_note' => $classificationContextNote,

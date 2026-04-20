@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/ml_model.php';
 
 function site_title(string $pageTitle = ''): string
 {
@@ -345,6 +346,118 @@ function parking_forecast_windows(): array
 }
 
 function facility_hourly_predictions(array $latestRows = []): array
+{
+    $snapshotSource = snapshot_data_source();
+    $modelPredictions = ml_model_predictions_lookup($snapshotSource);
+    if ($modelPredictions !== []) {
+        return facility_hourly_predictions_from_model($latestRows, $modelPredictions);
+    }
+
+    return facility_hourly_predictions_fallback($latestRows);
+}
+
+function facility_hourly_predictions_from_model(array $latestRows, array $modelPredictions): array
+{
+    $windows = parking_forecast_windows();
+    $rows = $latestRows !== [] ? $latestRows : latest_snapshots();
+
+    if ($rows === []) {
+        return [
+            'windows' => $windows,
+            'predictions' => [],
+            'summary' => [
+                'horizon_1h_available_total' => 0,
+                'horizon_2h_available_total' => 0,
+                'horizon_3h_available_total' => 0,
+                'open_24_7_count' => 0,
+                'limited_hours_count' => 0,
+                'unknown_hours_count' => 0,
+            ],
+        ];
+    }
+
+    $predictions = [];
+    $horizonAvailableTotals = ['1' => 0, '2' => 0, '3' => 0];
+    $open247Count = 0;
+    $limitedHoursCount = 0;
+    $unknownHoursCount = 0;
+
+    foreach ($rows as $row) {
+        $facilityId = (string) ($row['facility_id'] ?? '');
+        $facilityName = (string) ($row['facility_name'] ?? '');
+        $operatingMeta = facility_operating_meta($row);
+
+        if ($operatingMeta['is_open_24_7'] === 1) {
+            $open247Count++;
+        } elseif ($operatingMeta['is_open_24_7'] === 0) {
+            $limitedHoursCount++;
+        } else {
+            $unknownHoursCount++;
+        }
+
+        $facilityPredictionRows = [];
+        foreach (['1', '2', '3'] as $horizonKey) {
+            $pred = is_array($modelPredictions[$facilityId][$horizonKey] ?? null)
+                ? $modelPredictions[$facilityId][$horizonKey]
+                : null;
+
+            if ($pred === null) {
+                continue;
+            }
+
+            $facilityPredictionRows[$horizonKey] = [
+                'hour' => (int) (($windows['horizons'][$horizonKey]['hour'] ?? 0)),
+                'predicted_occupancy_rate' => (float) ($pred['predicted_occupancy_rate'] ?? 0),
+                'predicted_occupied' => (int) ($pred['predicted_occupied'] ?? 0),
+                'predicted_available' => (int) ($pred['predicted_available'] ?? 0),
+                'predicted_class' => (string) ($pred['predicted_class'] ?? 'Available'),
+                'is_open_24_7' => $operatingMeta['is_open_24_7'],
+                'hours_note' => $operatingMeta['note'],
+                'target_time' => (string) ($pred['target_time'] ?? ''),
+            ];
+            $horizonAvailableTotals[$horizonKey] += (int) ($pred['predicted_available'] ?? 0);
+        }
+
+        $predictions[$facilityId] = [
+            'facility_id' => $facilityId,
+            'facility_name' => $facilityName,
+            'is_open_24_7' => $operatingMeta['is_open_24_7'],
+            'operating_hours_note' => $operatingMeta['note'],
+            'prediction_model' => 'xgboost',
+            'horizons' => $facilityPredictionRows,
+            'horizon_1h' => $facilityPredictionRows['1'] ?? null,
+            'horizon_2h' => $facilityPredictionRows['2'] ?? null,
+            'horizon_3h' => $facilityPredictionRows['3'] ?? null,
+        ];
+    }
+
+    return [
+        'windows' => [
+            'timezone' => (string) ($windows['timezone'] ?? 'Australia/Sydney'),
+            'now_label' => (string) ($windows['now_label'] ?? ''),
+            'horizon_1h_label' => (string) (($windows['horizons']['1']['label'] ?? '+1h')),
+            'horizon_2h_label' => (string) (($windows['horizons']['2']['label'] ?? '+2h')),
+            'horizon_3h_label' => (string) (($windows['horizons']['3']['label'] ?? '+3h')),
+            'horizon_1h_window_label' => (string) (($windows['horizons']['1']['window_label'] ?? '')),
+            'horizon_2h_window_label' => (string) (($windows['horizons']['2']['window_label'] ?? '')),
+            'horizon_3h_window_label' => (string) (($windows['horizons']['3']['window_label'] ?? '')),
+            'horizon_1h_detail_label' => (string) (($windows['horizons']['1']['detail_label'] ?? '+1h forecast')),
+            'horizon_2h_detail_label' => (string) (($windows['horizons']['2']['detail_label'] ?? '+2h forecast')),
+            'horizon_3h_detail_label' => (string) (($windows['horizons']['3']['detail_label'] ?? '+3h forecast')),
+        ],
+        'predictions' => $predictions,
+        'summary' => [
+            'horizon_1h_available_total' => $horizonAvailableTotals['1'],
+            'horizon_2h_available_total' => $horizonAvailableTotals['2'],
+            'horizon_3h_available_total' => $horizonAvailableTotals['3'],
+            'open_24_7_count' => $open247Count,
+            'limited_hours_count' => $limitedHoursCount,
+            'unknown_hours_count' => $unknownHoursCount,
+        ],
+    ];
+}
+
+function facility_hourly_predictions_fallback(array $latestRows = []): array
 {
     $windows = parking_forecast_windows();
     $rows = $latestRows !== [] ? $latestRows : latest_snapshots();
@@ -872,8 +985,49 @@ function stored_classification_metrics(): array
     ");
 }
 
+function xgboost_regression_metrics(string $source): array
+{
+    $rows = array_values(array_filter(
+        ml_model_facility_metrics($source),
+        static fn(array $row): bool => isset($row['rmse']) && $row['rmse'] !== null
+    ));
+
+    usort(
+        $rows,
+        static fn(array $left, array $right): int => ((float) ($left['rmse'] ?? 0) <=> (float) ($right['rmse'] ?? 0))
+            ?: strcmp((string) ($left['facility_name'] ?? ''), (string) ($right['facility_name'] ?? ''))
+    );
+
+    return $rows;
+}
+
+function xgboost_classification_metrics(string $source): array
+{
+    $rows = array_values(array_filter(
+        ml_model_facility_metrics($source),
+        static fn(array $row): bool => isset($row['accuracy']) && $row['accuracy'] !== null
+    ));
+
+    usort(
+        $rows,
+        static fn(array $left, array $right): int => ((float) ($right['accuracy'] ?? 0) <=> (float) ($left['accuracy'] ?? 0))
+            ?: strcmp((string) ($left['facility_name'] ?? ''), (string) ($right['facility_name'] ?? ''))
+    );
+
+    return $rows;
+}
+
+function parking_prediction_model(): string
+{
+    return ml_model_is_available(snapshot_data_source()) ? 'xgboost' : 'baseline';
+}
+
 function regression_metrics_for_source(string $source): array
 {
+    if (ml_model_is_available($source)) {
+        return xgboost_regression_metrics($source);
+    }
+
     return $source === 'live'
         ? live_baseline_performance_metrics()['regression']
         : stored_regression_metrics();
@@ -881,6 +1035,10 @@ function regression_metrics_for_source(string $source): array
 
 function classification_metrics_for_source(string $source): array
 {
+    if (ml_model_is_available($source)) {
+        return xgboost_classification_metrics($source);
+    }
+
     return $source === 'live'
         ? live_baseline_performance_metrics()['classification']
         : stored_classification_metrics();
