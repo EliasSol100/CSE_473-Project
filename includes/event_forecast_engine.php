@@ -372,6 +372,22 @@ function events_build_forecast(array $event, array $facilities, array $modelPred
             ];
         }
 
+        $displayPredictedOccupied = $predictedOccupied;
+        $displayPredictedAvailable = $predictedAvailable;
+        $displayPredictedRate = $predictedRate;
+        $displayEventLift = $effectiveLift;
+
+        if ($isPredictionDay) {
+            $shortRangeForecast = events_worst_horizon_forecast($horizonForecasts);
+            if ($shortRangeForecast !== null) {
+                $displayPredictedOccupied = (int) ($shortRangeForecast['predicted_occupied'] ?? $predictedOccupied);
+                $displayPredictedAvailable = (int) ($shortRangeForecast['predicted_available'] ?? $predictedAvailable);
+                $displayPredictedRate = (float) ($shortRangeForecast['predicted_rate'] ?? $predictedRate);
+                $displayEventLift = (int) ($shortRangeForecast['event_lift'] ?? $effectiveLift);
+                $impactScoreRate = max($impactScoreRate, $displayPredictedRate);
+            }
+        }
+
         $forecasts[] = [
             'facility_id' => $facility['facility_id'],
             'facility_name' => $facility['facility_name'],
@@ -382,11 +398,11 @@ function events_build_forecast(array $event, array $facilities, array $modelPred
             'current_rate' => $currentRate,
             'current_status' => events_availability_class($currentRate),
             'baseline_occupied' => $baselineOccupied,
-            'event_lift' => $effectiveLift,
-            'predicted_occupied' => $predictedOccupied,
-            'predicted_available' => $predictedAvailable,
-            'predicted_rate' => $predictedRate,
-            'predicted_status' => events_availability_class($predictedRate),
+            'event_lift' => $displayEventLift,
+            'predicted_occupied' => $displayPredictedOccupied,
+            'predicted_available' => $displayPredictedAvailable,
+            'predicted_rate' => $displayPredictedRate,
+            'predicted_status' => events_availability_class($displayPredictedRate),
             'potential_event_lift' => $additionalVehicles,
             'impact_score_rate' => $impactScoreRate,
             'distance_km' => $distanceKm,
@@ -494,6 +510,45 @@ function events_build_forecast(array $event, array $facilities, array $modelPred
     return $event;
 }
 
+function events_status_rank(?string $status): int
+{
+    return match (strtolower(trim((string) $status))) {
+        'full' => 3,
+        'limited' => 2,
+        default => 1,
+    };
+}
+
+function events_worst_horizon_forecast(array $horizonForecasts): ?array
+{
+    $selected = null;
+
+    foreach ($horizonForecasts as $forecast) {
+        if (!is_array($forecast) || !isset($forecast['predicted_rate'])) {
+            continue;
+        }
+
+        if ($selected === null) {
+            $selected = $forecast;
+            continue;
+        }
+
+        $forecastRank = events_status_rank($forecast['predicted_status'] ?? null);
+        $selectedRank = events_status_rank($selected['predicted_status'] ?? null);
+
+        if ($forecastRank > $selectedRank) {
+            $selected = $forecast;
+            continue;
+        }
+
+        if ($forecastRank === $selectedRank && (float) ($forecast['predicted_rate'] ?? 0) > (float) ($selected['predicted_rate'] ?? 0)) {
+            $selected = $forecast;
+        }
+    }
+
+    return $selected;
+}
+
 function events_event_timing_meta(DateTimeImmutable $start, DateTimeImmutable $end, DateTimeImmutable $now): array
 {
     $isPredictionDay = $start->format('Y-m-d') === $now->format('Y-m-d');
@@ -572,29 +627,33 @@ function events_baseline_profiles(int $hour, ?int $isWeekend): array
 
     $hourStart = max(0, $hour - 1);
     $hourEnd = min(23, $hour + 1);
-    $sourceCondition = snapshot_source_condition();
+    $sourceCondition = snapshot_source_condition('s');
 
     if ($isWeekend === null) {
         $stmt = db()->prepare(
             "
-            SELECT facility_id, AVG(occupied) AS avg_occupied, AVG(available) AS avg_available,
-                   AVG(occupancy_rate) AS avg_rate, COUNT(*) AS sample_count
-            FROM occupancy_snapshots
+            SELECT s.facility_id, AVG(s.occupied) AS avg_occupied, AVG(s.available) AS avg_available,
+                   AVG(s.occupancy_rate) AS avg_rate, COUNT(*) AS sample_count
+            FROM occupancy_snapshots s
+            INNER JOIN parking_facilities f ON f.facility_id = s.facility_id
             WHERE {$sourceCondition}
-              AND hour BETWEEN ? AND ?
-            GROUP BY facility_id
+              AND LOWER(f.facility_name) NOT LIKE '%historical only%'
+              AND s.hour BETWEEN ? AND ?
+            GROUP BY s.facility_id
             "
         );
         $stmt->bind_param('ii', $hourStart, $hourEnd);
     } else {
         $stmt = db()->prepare(
             "
-            SELECT facility_id, AVG(occupied) AS avg_occupied, AVG(available) AS avg_available,
-                   AVG(occupancy_rate) AS avg_rate, COUNT(*) AS sample_count
-            FROM occupancy_snapshots
+            SELECT s.facility_id, AVG(s.occupied) AS avg_occupied, AVG(s.available) AS avg_available,
+                   AVG(s.occupancy_rate) AS avg_rate, COUNT(*) AS sample_count
+            FROM occupancy_snapshots s
+            INNER JOIN parking_facilities f ON f.facility_id = s.facility_id
             WHERE {$sourceCondition}
-              AND is_weekend = ? AND hour BETWEEN ? AND ?
-            GROUP BY facility_id
+              AND LOWER(f.facility_name) NOT LIKE '%historical only%'
+              AND s.is_weekend = ? AND s.hour BETWEEN ? AND ?
+            GROUP BY s.facility_id
             "
         );
         $stmt->bind_param('iii', $isWeekend, $hourStart, $hourEnd);

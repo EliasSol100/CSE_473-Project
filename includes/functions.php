@@ -109,6 +109,20 @@ function snapshot_source_condition(string $alias = ''): string
     return $qualified . " = '" . $source . "'";
 }
 
+function snapshot_freshness_condition(string $alias = ''): string
+{
+    if (snapshot_data_source() !== 'live') {
+        return '';
+    }
+
+    $qualified = $alias !== '' ? $alias . '.recorded_at' : 'recorded_at';
+    return " AND {$qualified} >= (
+        SELECT DATE_SUB(MAX(recorded_at), INTERVAL 30 MINUTE)
+        FROM occupancy_snapshots
+        WHERE snapshot_source = 'live'
+    )";
+}
+
 function facility_is_hidden(?string $facilityName): bool
 {
     $name = strtolower(trim((string) $facilityName));
@@ -205,11 +219,13 @@ function normalize_snapshot_row(array $row): array
 
 function dataset_overview(): array
 {
-    $condition = snapshot_source_condition();
+    $condition = snapshot_source_condition('s');
     return fetch_one_assoc("
         SELECT MIN(recorded_at) AS min_time, MAX(recorded_at) AS max_time, COUNT(*) AS observations
-        FROM occupancy_snapshots
+        FROM occupancy_snapshots s
+        INNER JOIN parking_facilities f ON f.facility_id = s.facility_id
         WHERE {$condition}
+          AND LOWER(f.facility_name) NOT LIKE '%historical only%'
     ") ?? ['min_time' => null, 'max_time' => null, 'observations' => 0];
 }
 
@@ -272,6 +288,7 @@ function latest_snapshots(): array
 {
     $outerCondition = snapshot_source_condition('s');
     $innerCondition = snapshot_source_condition();
+    $innerFreshnessCondition = snapshot_freshness_condition();
 
     $sql = "
         SELECT s.facility_id, f.facility_name, f.latitude, f.longitude, f.capacity, f.is_open_24_7, f.operating_hours_json,
@@ -281,6 +298,7 @@ function latest_snapshots(): array
             SELECT facility_id, MAX(recorded_at) AS max_recorded_at
             FROM occupancy_snapshots
             WHERE {$innerCondition}
+              {$innerFreshnessCondition}
             GROUP BY facility_id
         ) latest_map
             ON s.facility_id = latest_map.facility_id
@@ -701,13 +719,15 @@ function top_latest_facilities(int $limit = 8): array
 
 function hourly_average_occupancy(): array
 {
-    $condition = snapshot_source_condition();
+    $condition = snapshot_source_condition('s');
     return fetch_all_assoc("
-        SELECT hour, ROUND(AVG(occupancy_rate) * 100, 2) AS average_occupancy
-        FROM occupancy_snapshots
+        SELECT s.hour, ROUND(AVG(s.occupancy_rate) * 100, 2) AS average_occupancy
+        FROM occupancy_snapshots s
+        INNER JOIN parking_facilities f ON f.facility_id = s.facility_id
         WHERE {$condition}
-        GROUP BY hour
-        ORDER BY hour ASC
+          AND LOWER(f.facility_name) NOT LIKE '%historical only%'
+        GROUP BY s.hour
+        ORDER BY s.hour ASC
     ");
 }
 
@@ -744,6 +764,7 @@ function facility_summary(string $facilityId): ?array
 {
     $outerCondition = snapshot_source_condition('s');
     $innerCondition = snapshot_source_condition();
+    $innerFreshnessCondition = snapshot_freshness_condition();
 
     $sql = "
         SELECT f.facility_id, f.facility_name, f.latitude, f.longitude, f.capacity, f.is_open_24_7, f.operating_hours_json,
@@ -755,6 +776,7 @@ function facility_summary(string $facilityId): ?array
             FROM occupancy_snapshots
             WHERE facility_id = ?
               AND {$innerCondition}
+              {$innerFreshnessCondition}
             GROUP BY facility_id
         ) latest_map
             ON latest_map.facility_id = s.facility_id
@@ -794,13 +816,15 @@ function facility_history(string $facilityId): array
 
 function peak_hour(): ?array
 {
-    $condition = snapshot_source_condition();
+    $condition = snapshot_source_condition('s');
     return fetch_one_assoc("
-        SELECT hour, ROUND(AVG(occupancy_rate) * 100, 2) AS average_occupancy
-        FROM occupancy_snapshots
+        SELECT s.hour, ROUND(AVG(s.occupancy_rate) * 100, 2) AS average_occupancy
+        FROM occupancy_snapshots s
+        INNER JOIN parking_facilities f ON f.facility_id = s.facility_id
         WHERE {$condition}
-        GROUP BY hour
-        ORDER BY AVG(occupancy_rate) DESC, hour ASC
+          AND LOWER(f.facility_name) NOT LIKE '%historical only%'
+        GROUP BY s.hour
+        ORDER BY AVG(s.occupancy_rate) DESC, s.hour ASC
         LIMIT 1
     ");
 }

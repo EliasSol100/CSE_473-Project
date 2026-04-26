@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pymysql
@@ -21,6 +22,41 @@ MODELS_DIR = ROOT / "python" / "models"
 STATE_FILE = LOGS_DIR / "live_collector_state.json"
 MODEL_NAME = "xgboost"
 CLASS_LABELS = ["Available", "Limited", "Full"]
+PARKING_TIMEZONE = ZoneInfo("Australia/Sydney")
+BASE_FEATURE_COLUMNS = [
+    "facility_id",
+    "capacity",
+    "occupied",
+    "available",
+    "occupancy_rate",
+    "hour",
+    "day_of_week",
+    "is_weekend",
+    "month",
+    "hours_ahead",
+    "target_hour",
+    "target_day_of_week",
+    "target_is_weekend",
+    "target_month",
+]
+RATE_LEVEL_HISTORY_FEATURES = [
+    "previous_occupancy_rate",
+    "previous_2_occupancy_rate",
+    "previous_3_occupancy_rate",
+    "rolling_mean_3",
+    "rolling_mean_6",
+]
+HISTORY_FEATURE_COLUMNS = [
+    *RATE_LEVEL_HISTORY_FEATURES,
+    "rate_change_1",
+    "rate_change_2",
+    "rolling_std_3",
+    "rolling_std_6",
+    "minutes_since_previous",
+    "hour_sin",
+    "hour_cos",
+]
+R2_MIN_TARGET_STD = 0.015
 
 
 def load_environment() -> None:
@@ -89,6 +125,36 @@ def availability_class(available: int | None, occupancy_rate: float) -> str:
     return "Available"
 
 
+def add_history_features(history: pd.DataFrame) -> pd.DataFrame:
+    if history.empty:
+        return history
+
+    frame = history.sort_values(["facility_id", "recorded_at"]).copy()
+    grouped = frame.groupby("facility_id", sort=False)
+    occupancy = grouped["occupancy_rate"]
+
+    frame["previous_occupancy_rate"] = occupancy.shift(1)
+    frame["previous_2_occupancy_rate"] = occupancy.shift(2)
+    frame["previous_3_occupancy_rate"] = occupancy.shift(3)
+    frame["rate_change_1"] = frame["occupancy_rate"] - frame["previous_occupancy_rate"]
+    frame["rate_change_2"] = frame["previous_occupancy_rate"] - frame["previous_2_occupancy_rate"]
+    frame["rolling_mean_3"] = occupancy.transform(lambda series: series.shift(1).rolling(3, min_periods=1).mean())
+    frame["rolling_std_3"] = occupancy.transform(lambda series: series.shift(1).rolling(3, min_periods=2).std())
+    frame["rolling_mean_6"] = occupancy.transform(lambda series: series.shift(1).rolling(6, min_periods=1).mean())
+    frame["rolling_std_6"] = occupancy.transform(lambda series: series.shift(1).rolling(6, min_periods=2).std())
+    frame["minutes_since_previous"] = grouped["recorded_at"].diff().dt.total_seconds().div(60).clip(lower=0, upper=1440)
+    frame["hour_sin"] = frame["hour"].astype(float).map(lambda hour: math.sin((2 * math.pi * hour) / 24))
+    frame["hour_cos"] = frame["hour"].astype(float).map(lambda hour: math.cos((2 * math.pi * hour) / 24))
+
+    for column in RATE_LEVEL_HISTORY_FEATURES:
+        frame[column] = frame[column].fillna(frame["occupancy_rate"])
+
+    for column in ("rate_change_1", "rate_change_2", "rolling_std_3", "rolling_std_6", "minutes_since_previous"):
+        frame[column] = frame[column].fillna(0)
+
+    return frame
+
+
 def fetch_snapshot_history(connection, snapshot_source: str) -> pd.DataFrame:
     sql = """
         SELECT
@@ -127,7 +193,7 @@ def fetch_snapshot_history(connection, snapshot_source: str) -> pd.DataFrame:
     frame["day_of_week"] = frame["day_of_week"].astype(int)
     frame["is_weekend"] = frame["is_weekend"].astype(int)
     frame["month"] = frame["month"].astype(int)
-    return frame
+    return add_history_features(frame)
 
 
 def nearest_future_index(times_ns, target_ns: int, max_diff_ns: int) -> int | None:
@@ -182,53 +248,39 @@ def build_training_examples(history: pd.DataFrame) -> pd.DataFrame:
                 if target_time <= source_time:
                     continue
 
-                examples.append(
-                    {
-                        "facility_id": str(facility_id),
-                        "facility_name": row["facility_name"],
-                        "capacity": int(row["capacity"]),
-                        "occupied": int(row["occupied"]),
-                        "available": int(row["available"]),
-                        "occupancy_rate": float(row["occupancy_rate"]),
-                        "hour": int(row["hour"]),
-                        "day_of_week": int(row["day_of_week"]),
-                        "is_weekend": int(row["is_weekend"]),
-                        "month": int(row["month"]),
-                        "hours_ahead": int(hours_ahead),
-                        "target_hour": int(target_row["hour"]),
-                        "target_day_of_week": int(target_row["day_of_week"]),
-                        "target_is_weekend": int(target_row["is_weekend"]),
-                        "target_month": int(target_row["month"]),
-                        "source_time": source_time,
-                        "target_time": target_time,
-                        "target_rate": float(target_row["occupancy_rate"]),
-                        "target_available": int(target_row["available"]),
-                        "target_class": availability_class(int(target_row["available"]), float(target_row["occupancy_rate"])),
-                    }
-                )
+                example = {
+                    "facility_id": str(facility_id),
+                    "facility_name": row["facility_name"],
+                    "capacity": int(row["capacity"]),
+                    "occupied": int(row["occupied"]),
+                    "available": int(row["available"]),
+                    "occupancy_rate": float(row["occupancy_rate"]),
+                    "hour": int(row["hour"]),
+                    "day_of_week": int(row["day_of_week"]),
+                    "is_weekend": int(row["is_weekend"]),
+                    "month": int(row["month"]),
+                    "hours_ahead": int(hours_ahead),
+                    "target_hour": int(target_row["hour"]),
+                    "target_day_of_week": int(target_row["day_of_week"]),
+                    "target_is_weekend": int(target_row["is_weekend"]),
+                    "target_month": int(target_row["month"]),
+                    "source_time": source_time,
+                    "target_time": target_time,
+                    "target_rate": float(target_row["occupancy_rate"]),
+                    "target_available": int(target_row["available"]),
+                    "target_class": availability_class(int(target_row["available"]), float(target_row["occupancy_rate"])),
+                }
+
+                for column in HISTORY_FEATURE_COLUMNS:
+                    example[column] = float(row[column])
+
+                examples.append(example)
 
     return pd.DataFrame(examples)
 
 
 def prepare_features(examples: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
-    feature_frame = examples[
-        [
-            "facility_id",
-            "capacity",
-            "occupied",
-            "available",
-            "occupancy_rate",
-            "hour",
-            "day_of_week",
-            "is_weekend",
-            "month",
-            "hours_ahead",
-            "target_hour",
-            "target_day_of_week",
-            "target_is_weekend",
-            "target_month",
-        ]
-    ].copy()
+    feature_frame = examples[[*BASE_FEATURE_COLUMNS, *HISTORY_FEATURE_COLUMNS]].copy()
 
     feature_frame = pd.get_dummies(feature_frame, columns=["facility_id"], prefix="facility", dtype=int)
     feature_columns = list(feature_frame.columns)
@@ -260,11 +312,13 @@ def align_columns(frame: pd.DataFrame, feature_columns: Iterable[str]) -> pd.Dat
 
 def train_models(train_examples: pd.DataFrame, feature_columns: list[str]):
     regressor = XGBRegressor(
-        n_estimators=220,
-        max_depth=6,
-        learning_rate=0.05,
-        subsample=0.9,
-        colsample_bytree=0.9,
+        n_estimators=450,
+        max_depth=3,
+        learning_rate=0.03,
+        subsample=0.85,
+        colsample_bytree=0.85,
+        reg_lambda=2.0,
+        reg_alpha=0.05,
         objective="reg:squarederror",
         random_state=42,
         n_jobs=1,
@@ -309,7 +363,7 @@ def compute_per_facility_metrics(test_examples: pd.DataFrame, regression_predict
         mae = float(mean_absolute_error(actual_rate, predicted_rate))
         rmse = float(math.sqrt(mean_squared_error(actual_rate, predicted_rate)))
         r2 = None
-        if sample_size >= 2 and actual_rate.nunique() >= 2:
+        if sample_size >= 2 and actual_rate.nunique() >= 2 and float(actual_rate.std(ddof=0)) >= R2_MIN_TARGET_STD:
             r2 = float(r2_score(actual_rate, predicted_rate))
         accuracy = float(accuracy_score(actual_class, predicted_class))
 
@@ -336,31 +390,34 @@ def latest_feature_rows(history: pd.DataFrame) -> pd.DataFrame:
 
 def build_prediction_rows(latest_rows: pd.DataFrame, feature_columns: list[str], regressor, classifier) -> pd.DataFrame:
     prediction_rows: list[dict] = []
-    now = datetime.now()
+    now = datetime.now(PARKING_TIMEZONE)
 
     for _, row in latest_rows.iterrows():
         for hours_ahead in (1, 2, 3):
-            target_time = now + timedelta(hours=hours_ahead)
-            feature_row = pd.DataFrame(
-                [
-                    {
-                        "facility_id": str(row["facility_id"]),
-                        "capacity": int(row["capacity"]),
-                        "occupied": int(row["occupied"]),
-                        "available": int(row["available"]),
-                        "occupancy_rate": float(row["occupancy_rate"]),
-                        "hour": int(row["hour"]),
-                        "day_of_week": int(row["day_of_week"]),
-                        "is_weekend": int(row["is_weekend"]),
-                        "month": int(row["month"]),
-                        "hours_ahead": hours_ahead,
-                        "target_hour": int(target_time.strftime("%H")),
-                        "target_day_of_week": int(target_time.isoweekday()),
-                        "target_is_weekend": 1 if target_time.isoweekday() >= 6 else 0,
-                        "target_month": int(target_time.strftime("%m")),
-                    }
-                ]
-            )
+            target_time = (now + timedelta(hours=hours_ahead)).replace(minute=0, second=0, microsecond=0)
+            feature_data = {
+                "facility_id": str(row["facility_id"]),
+                "capacity": int(row["capacity"]),
+                "occupied": int(row["occupied"]),
+                "available": int(row["available"]),
+                "occupancy_rate": float(row["occupancy_rate"]),
+                "hour": int(row["hour"]),
+                "day_of_week": int(row["day_of_week"]),
+                "is_weekend": int(row["is_weekend"]),
+                "month": int(row["month"]),
+                "hours_ahead": hours_ahead,
+                "target_hour": int(target_time.hour),
+                "target_day_of_week": int(target_time.weekday()),
+                "target_is_weekend": 1 if target_time.weekday() >= 5 else 0,
+                "target_month": int(target_time.month),
+            }
+
+            for column in HISTORY_FEATURE_COLUMNS:
+                fallback = float(row["occupancy_rate"]) if column in RATE_LEVEL_HISTORY_FEATURES else 0.0
+                value = row.get(column, fallback)
+                feature_data[column] = fallback if pd.isna(value) else float(value)
+
+            feature_row = pd.DataFrame([feature_data])
 
             encoded = pd.get_dummies(feature_row, columns=["facility_id"], prefix="facility", dtype=int)
             aligned = align_columns(encoded, feature_columns)
@@ -375,7 +432,7 @@ def build_prediction_rows(latest_rows: pd.DataFrame, feature_columns: list[str],
                 {
                     "facility_id": str(row["facility_id"]),
                     "hours_ahead": hours_ahead,
-                    "target_time": target_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "target_time": target_time.replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S"),
                     "predicted_occupancy_rate": predicted_rate,
                     "predicted_occupied": predicted_occupied,
                     "predicted_available": predicted_available,
@@ -408,7 +465,7 @@ def persist_run(
     classifier.save_model(cls_path)
     features_path.write_text(json.dumps(feature_columns, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    notes = "Unified XGBoost regression/classification models trained for +1h, +2h, and +3h occupancy forecasting."
+    notes = "Unified XGBoost regression/classification models trained for +1h, +2h, and +3h occupancy forecasting with recent-history occupancy features."
 
     with connection.cursor() as cursor:
         cursor.execute(
