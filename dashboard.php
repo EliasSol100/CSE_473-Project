@@ -1,10 +1,10 @@
 <?php
-// Dashboard page: builds live network KPIs, charts, and short-range prediction cards.
+// The dashboard brings together the current network totals, charts, and +1h/+2h/+3h forecasts.
 $pageTitle = 'Dashboard';
 require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/includes/live_collector.php';
 
-// Keep the browser auto-sync aligned with the PHP live collector settings.
+// Match the browser refresh timing with the live collector so the numbers stay recent.
 $collectorIntervalMs = 10000;
 try {
     $collectorIntervalMs = max(10000, ((int) (live_collector_config()['interval_seconds'] ?? 10)) * 1000);
@@ -27,7 +27,7 @@ $topLabels = array_map(fn($row) => $row['facility_name'], $topLatest);
 $topValues = array_map(fn($row) => round(((float) $row['occupancy_rate']) * 100, 2), $topLatest);
 $distLabels = array_map(fn($row) => $row['availability_class'], $distribution);
 $distValues = array_map(fn($row) => (int) $row['total'], $distribution);
-// This payload is mirrored into JavaScript so dashboard cards can update without reloading.
+// The same data is passed to JavaScript so cards and charts can update without a full page reload.
 $dashboardPayload = [
     'summary' => $summary,
     'top_latest' => $topLatest,
@@ -77,7 +77,7 @@ $dashboardPayload = [
     </section>
 </div>
 <script>
-// Chart-ready arrays are rendered once, then app.js updates them after live syncs.
+// These arrays give Chart.js its first render; later updates come from the JSON API.
 window.dashboardState = <?= json_encode($dashboardPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 const hourlyLabels = <?= json_encode($hourLabels) ?>;
 const hourlyValues = <?= json_encode($hourValues) ?>;

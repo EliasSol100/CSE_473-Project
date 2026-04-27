@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/functions.php';
 
-// Page payload builders centralize data preparation for both PHP pages and JSON APIs.
+// These payloads keep the PHP pages and JSON refresh endpoints using the same data shape.
 function home_page_payload(): array
 {
     $summary = summary_metrics();
@@ -22,7 +22,7 @@ function facilities_page_payload(string $selectedFacilityId = ''): array
     $predictionBundle = facility_hourly_predictions($latest);
     $predictions = is_array($predictionBundle['predictions'] ?? null) ? $predictionBundle['predictions'] : [];
     $selectedSummary = $selectedFacilityId !== '' ? facility_summary($selectedFacilityId) : null;
-    // If a requested facility is missing or hidden, reset to the full facility list.
+    // If the requested facility cannot be shown, quietly return to the normal full list.
     if ($selectedFacilityId !== '' && $selectedSummary === null) {
         $selectedFacilityId = '';
     }
@@ -81,7 +81,7 @@ function insights_page_payload(): array
     $regMetrics = array_slice($allRegMetrics, 0, 10);
     $clsMetrics = array_slice($allClsMetrics, 0, 10);
     $metricsSourceLabel = $metricsSource === 'live' ? 'Live collector history' : 'Imported SQL baseline';
-    // The explanatory notes change depending on whether XGBoost or fallback metrics are active.
+    // The note text explains whether the user is seeing XGBoost results or fallback metrics.
     if ($predictionModel === 'xgboost') {
         $classificationContextNote = 'Average classification accuracy is calculated from the current XGBoost model, validated against real held-out facility history.';
         $regressionNote = 'Shows the lowest RMSE facilities from the current XGBoost occupancy-rate model using real historical training data.';

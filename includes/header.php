@@ -1,5 +1,5 @@
 <?php
-// Shared header: loads helpers, theme setup, navigation, and Chart.js defaults.
+// Shared header used by every page: navigation, theme setup, and chart defaults.
 require_once __DIR__ . '/functions.php';
 ?>
 <!DOCTYPE html>
@@ -9,7 +9,7 @@ require_once __DIR__ . '/functions.php';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= h(site_title($pageTitle ?? '')) ?></title>
     <script>
-        // Apply the saved theme before CSS loads to prevent a light/dark flash.
+        // Apply the saved theme early so the page does not flash the wrong mode.
         (() => {
             try {
                 const storedTheme = window.localStorage.getItem('smartParkingTheme');
@@ -26,7 +26,7 @@ require_once __DIR__ . '/functions.php';
     <link rel="stylesheet" href="<?= h(asset_url('assets/css/style.css')) ?>">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        // Central Chart.js theme helpers keep chart colors readable in light and dark mode.
+        // Chart.js reads the same CSS colors as the rest of the design.
         window.smartParkingChartColors = () => {
             const rootStyles = getComputedStyle(document.documentElement);
             return {

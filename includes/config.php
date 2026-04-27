@@ -1,5 +1,5 @@
 <?php
-// Default local XAMPP configuration. Use config.local.php for machine-specific overrides.
+// Default local XAMPP settings; config.local.php can override these on another machine.
 return [
     'db_host' => '127.0.0.1',
     'db_port' => 3306,

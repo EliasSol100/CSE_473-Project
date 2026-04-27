@@ -2,7 +2,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/ml_model.php';
 
-// Shared view helpers used by the PHP pages and JSON endpoints.
+// Common helpers for page titles, escaping, database reads, formatting, and dashboard data.
 function site_title(string $pageTitle = ''): string
 {
     $site = app_config()['site_name'] ?? 'Smart Parking Web';
@@ -55,7 +55,7 @@ function fetch_one_assoc(string $sql): ?array
     return $row ?: null;
 }
 
-// Data source helpers choose live data only when the collector has run recently.
+// Use live data only when the collector has checked in recently; otherwise fall back to seed data.
 function live_collector_recently_active(int $maxAgeSeconds = 180): bool
 {
     $stateFile = __DIR__ . '/../logs/live_collector_state.json';
@@ -118,7 +118,7 @@ function snapshot_freshness_condition(string $alias = ''): string
     }
 
     $qualified = $alias !== '' ? $alias . '.recorded_at' : 'recorded_at';
-    // Avoid stale live readings by keeping facilities within 30 minutes of the latest live snapshot.
+    // Keep only facilities close to the latest live timestamp so old readings do not distort cards.
     return " AND {$qualified} >= (
         SELECT DATE_SUB(MAX(recorded_at), INTERVAL 30 MINUTE)
         FROM occupancy_snapshots
@@ -210,7 +210,7 @@ function facility_override_hours(string $facilityId): ?array
     ];
 }
 
-// Network summary queries feed Home, Dashboard, Facilities, About, and Insights cards.
+// These summary queries are shared by Home, Dashboard, Facilities, About, and Insights.
 function normalize_snapshot_row(array $row): array
 {
     $row['availability_class'] = occupancy_availability_class(
@@ -294,7 +294,7 @@ function latest_snapshots(): array
     $innerCondition = snapshot_source_condition();
     $innerFreshnessCondition = snapshot_freshness_condition();
 
-    // Pick the newest qualifying snapshot per facility for the active source.
+    // For each facility, pick the newest snapshot from the active source.
     $sql = "
         SELECT s.facility_id, f.facility_name, f.latitude, f.longitude, f.capacity, f.is_open_24_7, f.operating_hours_json,
                s.recorded_at, s.occupied, s.available, s.occupancy_rate, s.availability_class
@@ -339,7 +339,7 @@ function parking_timezone(): DateTimeZone
     return $timezone;
 }
 
-// Prediction helpers combine stored XGBoost outputs with labels used by the UI.
+// Prediction helpers format XGBoost outputs into the labels and totals shown in the UI.
 function parking_forecast_windows(): array
 {
     $now = new DateTimeImmutable('now', parking_timezone());
@@ -374,11 +374,11 @@ function facility_hourly_predictions(array $latestRows = []): array
     $snapshotSource = snapshot_data_source();
     $modelPredictions = ml_model_predictions_lookup($snapshotSource);
     if ($modelPredictions !== []) {
-        // Prefer the trained XGBoost predictions persisted in MySQL.
+        // Prefer trained XGBoost predictions because they use recent historical patterns.
         return facility_hourly_predictions_from_model($latestRows, $modelPredictions);
     }
 
-    // Fall back to historical hourly averages when no model run is available yet.
+    // If there is no model run yet, use historical hourly averages so the page still works.
     return facility_hourly_predictions_fallback($latestRows);
 }
 
@@ -700,7 +700,7 @@ function facility_predict_window(
     if ($hourRate === null) {
         $predictedRate = max(0.0, min(1.0, $currentRate));
     } else {
-        // Simple fallback blend: facility pattern + current condition + global hourly pattern.
+        // Fallback forecast: blend this facility's usual pattern with the current reading.
         $predictedRate = (0.55 * (float) $hourRate) + (0.35 * $currentRate) + (0.10 * $globalRate);
         $predictedRate = max(0.0, min(1.0, $predictedRate));
     }
@@ -871,7 +871,7 @@ function capacity_leaders(int $limit = 10): array
     return array_slice($rows, 0, $limit);
 }
 
-// Metrics helpers power the Insights regression and classification tables.
+// Metrics helpers decide which regression/classification results appear in Insights.
 function live_baseline_performance_metrics(): array
 {
     static $metrics = null;
@@ -1028,7 +1028,7 @@ function xgboost_regression_metrics(string $source): array
 
     usort(
         $rows,
-        // Lowest RMSE is shown first because this section focuses on prediction error size.
+        // Sort by lowest RMSE first because this table is about small prediction error.
         static fn(array $left, array $right): int => ((float) ($left['rmse'] ?? 0) <=> (float) ($right['rmse'] ?? 0))
             ?: strcmp((string) ($left['facility_name'] ?? ''), (string) ($right['facility_name'] ?? ''))
     );
@@ -1089,7 +1089,7 @@ function classification_metrics(): array
     return classification_metrics_for_source(insights_metrics_source());
 }
 
-// Small formatting helpers keep numbers, percentages, and badges consistent in every page.
+// Display helpers keep percentages, numbers, dates, and status colors consistent everywhere.
 function percent_badge_class(float $percentage): string
 {
     if ($percentage >= 100) return 'status-full';

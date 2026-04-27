@@ -2,7 +2,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/ml_model.php';
 
-// PHP live collector: pulls the NSW car park API, saves snapshots, then refreshes XGBoost when needed.
+// This collector lets the website pull NSW parking data without needing a separate terminal script.
 
 const LIVE_COLLECTOR_BASE_URL = 'https://api.transport.nsw.gov.au/v1';
 const LIVE_COLLECTOR_LIST_URL = LIVE_COLLECTOR_BASE_URL . '/carpark';
@@ -47,7 +47,7 @@ function live_collector_run(bool $force = false): array
             $startedAt = live_collector_now_iso();
             live_collector_log('Starting dashboard-triggered live sync.');
 
-            // Fetch the facility list first, then retrieve each facility's detailed occupancy record.
+            // Start with the facility list, then ask the API for each site's current occupancy.
             $facilityMap = live_collector_fetch_facility_map($config);
             $detailResults = live_collector_fetch_facility_details(array_keys($facilityMap), $config);
 
@@ -113,7 +113,7 @@ function live_collector_run(bool $force = false): array
                 live_collector_write_hours_cache($hoursCache);
             }
 
-            // Persist only normalized facility/snapshot fields needed by the dashboard.
+            // Save only the cleaned fields that the dashboard and model actually use.
             $persistResult = live_collector_persist_items($items);
             $completedAt = live_collector_now_iso();
             $pageShouldReload = (($persistResult['new_snapshots'] ?? 0) + ($persistResult['changed_snapshots'] ?? 0)) > 0;
@@ -158,7 +158,7 @@ function live_collector_run(bool $force = false): array
             ];
             live_collector_write_state($stateUpdate);
 
-            // Retrain after changed data so prediction cards stay tied to the newest history.
+            // When new data lands, refresh XGBoost so forecast cards stay up to date.
             $modelRefresh = ml_model_refresh_if_due('live', $pageShouldReload);
             if (($modelRefresh['status'] ?? '') === 'completed') {
                 live_collector_log(
@@ -227,7 +227,7 @@ function live_collector_config(): array
         throw new RuntimeException('The PHP cURL extension is required for dashboard live sync.');
     }
 
-    // Environment values let the project run locally without hard-coding API secrets.
+    // Read secrets and timing from .env so API keys are not hard-coded in the project.
     $config = [
         'api_key' => $apiKey,
         'interval_seconds' => max(10, live_collector_env_int('DASHBOARD_COLLECT_INTERVAL_SECONDS', LIVE_COLLECTOR_DEFAULT_INTERVAL_SECONDS)),
@@ -497,7 +497,7 @@ function live_collector_fetch_facility_detail_chunk(array $facilityIds, array $c
         throw new RuntimeException('Unable to initialize parallel dashboard sync requests.');
     }
 
-    // curl_multi keeps the dashboard sync fast by querying several facilities together.
+    // Query several facilities together so the dashboard does not wait on one request at a time.
     $handles = [];
     foreach ($facilityIds as $facilityId) {
         $handle = curl_init(sprintf(LIVE_COLLECTOR_DETAIL_URL_TEMPLATE, rawurlencode((string) $facilityId)));
@@ -571,7 +571,7 @@ function live_collector_fetch_facility_detail_chunk(array $facilityIds, array $c
 
 function live_collector_extract_fields(array $payload, ?string $fallbackName = null): ?array
 {
-    // Convert the raw NSW API shape into the normalized database columns.
+    // Convert the raw NSW API response into the columns used by the rest of the app.
     $facilityId = trim((string) ($payload['facility_id'] ?? ''));
     $facilityName = trim((string) ($payload['facility_name'] ?? $fallbackName ?? $facilityId));
     $capacity = live_collector_parse_int($payload['spots'] ?? null);
@@ -766,7 +766,7 @@ function live_collector_fetch_overpass_operating_hours(array $item, array $confi
         return null;
     }
 
-    // Optional enrichment: ask OpenStreetMap/Overpass for operating-hours tags near the facility.
+    // Optional enrichment: look near the car park in OpenStreetMap for operating-hours tags.
     $query = sprintf(
         '[out:json][timeout:20];(node(around:650,%.6F,%.6F)["amenity"="parking"];way(around:650,%.6F,%.6F)["amenity"="parking"];relation(around:650,%.6F,%.6F)["amenity"="parking"];node(around:650,%.6F,%.6F)["parking"="park_ride"];way(around:650,%.6F,%.6F)["parking"="park_ride"];relation(around:650,%.6F,%.6F)["parking"="park_ride"];);out tags center;',
         $latitude,
@@ -1018,7 +1018,7 @@ function live_collector_persist_items(array $items): array
     }
 
     $connection = db();
-    // Facilities are upserted separately from snapshots so capacity/name changes stay current.
+    // Update facility details separately from time-based snapshots so metadata can change safely.
     $facilityStatement = $connection->prepare(
         "
         INSERT INTO parking_facilities (facility_id, facility_name, latitude, longitude, capacity, is_open_24_7, operating_hours_json)

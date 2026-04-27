@@ -1,5 +1,5 @@
 <?php
-// JSON endpoint for refreshing Insights cards, charts, and model metrics.
+// Insights page refresh endpoint for cards, charts, and model performance tables.
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 

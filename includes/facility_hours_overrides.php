@@ -1,8 +1,8 @@
 <?php
 
-// Manually maintained operating-hours overrides.
-// These keep the dashboard cards stable when the NSW API does not publish hours metadata.
-// Default baseline applied to avoid unknown-hour UI states; update rows as you confirm exact hours.
+// Manually maintained operating-hour notes.
+// The NSW feed does not always publish hours, so these values keep the UI clear for each site.
+// Update individual rows if more exact opening-hours data becomes available.
 return [
     '486' => ['hours' => 'Open 24/7', 'is_open_24_7' => 1], // Park&Ride - Ashfield
     '31' => ['hours' => 'Open 24/7', 'is_open_24_7' => 1], // Park&Ride - Bella Vista

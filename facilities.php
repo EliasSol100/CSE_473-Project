@@ -1,10 +1,10 @@
 <?php
-// Facilities page: lists every monitored site and optionally shows one selected timeline.
+// This page shows the facility list and, when selected, a closer look at one parking site.
 $pageTitle = 'Facilities';
 require_once __DIR__ . '/includes/page_payloads.php';
 require_once __DIR__ . '/includes/live_collector.php';
 
-// Reuse the collector cadence so table values stay close to the live feed.
+// Use the same refresh speed as the collector so table values do not lag behind the feed.
 $collectorIntervalMs = 10000;
 try {
     $collectorIntervalMs = max(10000, ((int) (live_collector_config()['interval_seconds'] ?? 10)) * 1000);
@@ -15,7 +15,7 @@ $collectorIntervalSeconds = max(1, (int) round($collectorIntervalMs / 1000));
 $selectedFacilityId = isset($_GET['facility_id']) ? trim((string) $_GET['facility_id']) : '';
 $facilitiesPayload = facilities_page_payload($selectedFacilityId);
 $facilities = $facilitiesPayload['facilities'];
-// When a facility is selected, the table narrows to that one site for easier review.
+// If the user picked a facility, keep the table focused on that site.
 $visibleFacilities = $selectedFacilityId !== ''
     ? array_values(array_filter(
         $facilities,
@@ -155,7 +155,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 <script>
-// app.js uses this initial payload for filtering, charting, and live table refreshes.
+// JavaScript keeps this copy so filters, charts, and live refreshes all work from the same data.
 window.facilitiesState = <?= json_encode($facilitiesPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 window.facilitiesCharts = {};
 </script>

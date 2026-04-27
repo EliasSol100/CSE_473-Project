@@ -1,6 +1,6 @@
 <?php
 
-// Live event source layer: fetches official event feeds and normalizes them into one catalog.
+// This file gathers official event feeds and reshapes them into one clean event catalog.
 function events_live_cache_path(): string
 {
     return dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'events_live_cache.json';
@@ -46,7 +46,7 @@ function events_live_catalog_bundle(?DateTimeImmutable $referenceNow = null): ar
         ? $referenceNow->setTimezone(events_timezone())
         : $liveNow;
 
-    // Prefer a fresh cache so page loads do not repeatedly scrape official event pages.
+    // Use a fresh cache when possible so every page load does not hit official websites again.
     $cache = events_live_cache_read();
     if ($cache !== null && events_live_cache_is_fresh($cache, $liveNow)) {
         return [
@@ -61,7 +61,7 @@ function events_live_catalog_bundle(?DateTimeImmutable $referenceNow = null): ar
     $refreshStartedAt = microtime(true);
 
     foreach (events_live_source_definitions() as $source) {
-        // Stop refreshing if the page request has already spent too long on remote feeds.
+        // Stop if remote event pages are taking too long, so the website still responds.
         if ((microtime(true) - $refreshStartedAt) >= events_live_fetch_budget_seconds()) {
             $errors[] = 'Live event refresh exceeded the safe time budget, so some sources were skipped.';
             break;
@@ -125,7 +125,7 @@ function events_live_fetch_source(array $source, DateTimeImmutable $now): array
 
 function events_live_source_definitions(): array
 {
-    // Each source definition contains the URL plus assumptions used by the parking forecast model.
+    // Each source keeps its URL and the assumptions needed to estimate parking spillover.
     return [
         [
             'source_key' => 'city-of-sydney',
@@ -270,7 +270,7 @@ function events_live_sydney_olympic_park_profile(array $overrides = []): array
 
 function events_live_fetch_city_of_sydney_weekly_events(array $source, DateTimeImmutable $now): array
 {
-    // City of Sydney exposes event data inside the Next.js page payload.
+    // City of Sydney keeps its weekly event list inside the page's Next.js data payload.
     $payload = events_live_extract_next_data_payload(events_live_http_get($source['source_page_url']));
     $hits = is_array($payload['props']['pageProps']['searchResults']['hits'] ?? null)
         ? $payload['props']['pageProps']['searchResults']['hits']
@@ -417,7 +417,7 @@ function events_live_city_time_window(
 
 function events_live_city_location_profile(array $hit): array
 {
-    // The City feed often gives suburb/venue text instead of exact coordinates, so map known names.
+    // The city feed usually gives venue/suburb text, so known places are mapped to coordinates.
     $venueName = events_live_clean_title((string) ($hit['venueName'] ?? ''));
     $suburbName = events_live_clean_title((string) ($hit['suburbName'] ?? ''));
     $regionSlugs = array_values(array_filter(array_map('trim', array_map('strval', (array) ($hit['regions'] ?? [])))));
@@ -576,7 +576,7 @@ function events_live_city_attendance_profile(
     string $freeEvent,
     array $eventTypes
 ): array {
-    // Estimate crowd size from event category and tags when no official crowd number is published.
+    // When a city event has no crowd number, estimate attendance from its category and tags.
     $tags = strtolower(implode(' ', array_map('events_live_plain_text', $rawTags)));
     $haystack = strtolower($title . ' ' . $tags);
     $isFree = strtolower(trim($freeEvent)) === 'true';
@@ -665,7 +665,7 @@ function events_live_extract_next_data_payload(string $html): array
 
 function events_live_category_metadata(array $rawCategories, string $title = '', array $rawTags = []): array
 {
-    // Normalize source-specific category labels into stable filter slugs for the UI.
+    // Different feeds name categories differently, so normalize them for one filter menu.
     $slugs = [];
     foreach ($rawCategories as $rawCategory) {
         $slug = events_live_map_category_slug((string) $rawCategory);
@@ -854,7 +854,7 @@ function events_live_build_dedupe_key(string $title, DateTimeImmutable $startsAt
 
 function events_live_fetch_qudos_events(array $source, DateTimeImmutable $now): array
 {
-    // Qudos publishes event records through a WordPress REST endpoint.
+    // Qudos provides events through WordPress JSON, which is easier to parse than HTML.
     $events = [];
 
     for ($page = 1; $page <= 3; $page++) {
@@ -1165,7 +1165,7 @@ function events_live_extract_time_labels(string $value): array
 
 function events_live_fetch_sopa_split_events(array $source, DateTimeImmutable $now): array
 {
-    // Sydney Olympic Park venue pages list events in HTML tables with date/start/finish/crowd columns.
+    // Sydney Olympic Park venue pages publish crowd numbers in simple HTML tables.
     $events = [];
 
     foreach (events_live_extract_html_tables(events_live_http_get($source['source_page_url'])) as $table) {
@@ -1489,7 +1489,7 @@ function events_live_http_get(string $url, array $headers = []): string
 
 function events_live_normalize_catalog(array $events, DateTimeImmutable $now): array
 {
-    // Remove past/far-future events, deduplicate by title/date/venue, and sort chronologically.
+    // Keep only useful upcoming events, remove duplicates, then sort them by start time.
     $normalized = [];
     $futureCutoff = $now->modify('+120 days');
 
@@ -1608,7 +1608,7 @@ function events_live_cache_is_fresh(array $cache, DateTimeImmutable $now): bool
 
 function events_live_cache_read(): ?array
 {
-    // Read the newest valid cache from disk or the current PHP session.
+    // Read whichever cache copy is newest, either from disk or the current browser session.
     $latest = null;
 
     foreach (events_live_cache_paths() as $path) {

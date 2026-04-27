@@ -1,5 +1,5 @@
 <?php
-// JSON endpoint for the About page coverage and observation statistics.
+// About page refresh endpoint for project coverage and observation counts.
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 

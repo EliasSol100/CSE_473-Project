@@ -1,10 +1,10 @@
 <?php
-// About page: presents project purpose plus live coverage statistics.
+// The About page explains the project and shows how much parking data is currently covered.
 $pageTitle = 'About';
 require_once __DIR__ . '/includes/page_payloads.php';
 require_once __DIR__ . '/includes/live_collector.php';
 
-// Coverage cards are refreshed with the same collector interval as the live dashboard.
+// These coverage cards refresh with the same timing as the live dashboard.
 $collectorIntervalMs = 10000;
 try {
     $collectorIntervalMs = max(10000, ((int) (live_collector_config()['interval_seconds'] ?? 10)) * 1000);
@@ -108,7 +108,7 @@ require_once __DIR__ . '/includes/header.php';
     </section>
 </div>
 <script>
-// app.js uses this initial state to update About metrics after a live sync.
+// JavaScript starts with this payload and updates the About metrics after live syncs.
 window.aboutState = <?= json_encode($aboutPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 </script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

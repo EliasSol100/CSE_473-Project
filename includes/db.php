@@ -1,5 +1,5 @@
 <?php
-// Database bootstrap: loads configuration, opens MySQL, and applies small runtime migrations.
+// Database setup lives here so every page connects to MySQL in the same way.
 function app_config(): array
 {
     static $config = null;
@@ -26,7 +26,7 @@ function db(): mysqli
     $config = app_config();
     mysqli_report(MYSQLI_REPORT_OFF);
 
-    // The app keeps one shared mysqli connection per request.
+    // Reuse one MySQL connection during the request instead of opening many connections.
     $connection = @new mysqli(
         $config['db_host'],
         $config['db_user'],
@@ -58,7 +58,7 @@ function db_ensure_runtime_schema(mysqli $connection): void
         return;
     }
 
-    // Model tables are created at runtime so existing imports can support XGBoost runs.
+    // Create model tables automatically so older database imports can still run XGBoost.
     db_ensure_model_tables($connection);
 
     if (db_table_exists($connection, 'parking_facilities')) {
@@ -228,7 +228,7 @@ function db_classify_snapshot_sources(mysqli $connection, bool $columnWasJustAdd
     $seedSnapshotPairs = db_seed_snapshot_pairs();
     $seedPairCount = count($seedSnapshotPairs);
 
-    // When older databases lacked snapshot_source, infer seed rows from the SQL import file.
+    // Older imports did not mark seed/live rows, so compare against the SQL file to classify them.
     if (!$columnWasJustAdded && !($seedRows === $totalRows && $totalRows > $seedPairCount && $seedPairCount > 0)) {
         return;
     }

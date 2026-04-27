@@ -1,6 +1,6 @@
 <?php
 
-// XGBoost integration helpers: find latest runs, read predictions, and retrain when due.
+// This file is the bridge between PHP pages and the Python XGBoost training script.
 const ML_MODEL_NAME = 'xgboost';
 const ML_MODEL_REFRESH_SECONDS = 300;
 const ML_MODEL_LOCK_FILE = __DIR__ . '/../logs/xgboost_training.lock';
@@ -14,7 +14,7 @@ function ml_model_snapshot_source(?string $snapshotSource = null): string
     }
 
     if (function_exists('snapshot_data_source')) {
-        // Mirror the PHP page data source so model metrics match the visible dashboard data.
+        // Match the page's data source so the model metrics describe the same data being shown.
         $resolved = strtolower(trim((string) snapshot_data_source()));
         if ($resolved === 'live' || $resolved === 'seed') {
             return $resolved;
@@ -27,7 +27,7 @@ function ml_model_snapshot_source(?string $snapshotSource = null): string
 function ml_model_latest_run(?string $snapshotSource = null): ?array
 {
     $snapshotSource = ml_model_snapshot_source($snapshotSource);
-    // Predictions are stored by facility and horizon, e.g. [facility_id]["1"] for +1h.
+    // Store predictions by facility and horizon, e.g. [facility_id]["1"] means +1 hour.
     $connection = db();
     $stmt = $connection->prepare(
         "SELECT run_id, model_name, snapshot_source, run_status, trained_at, training_rows, validation_rows, feature_count, notes
@@ -192,7 +192,7 @@ function ml_model_refresh_if_due(?string $snapshotSource = null, bool $force = f
         ];
     }
 
-    // A lock file prevents overlapping training jobs from multiple browser syncs.
+    // Use a lock file so two browser refreshes cannot train the model at the same time.
     if (is_file(ML_MODEL_LOCK_FILE) && (time() - (int) @filemtime(ML_MODEL_LOCK_FILE)) < 1800) {
         return [
             'status' => 'busy',
@@ -221,7 +221,7 @@ function ml_model_refresh_if_due(?string $snapshotSource = null, bool $force = f
 
         $decoded = json_decode($outputText, true);
         if (!is_array($decoded)) {
-            // Python may print warnings before JSON, so recover the last valid JSON line.
+            // If Python prints a warning before JSON, read from the last valid JSON line.
             $lines = preg_split('/\r\n|\r|\n/', $outputText) ?: [];
             for ($index = count($lines) - 1; $index >= 0; $index--) {
                 $candidate = trim((string) $lines[$index]);

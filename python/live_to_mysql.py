@@ -1,4 +1,4 @@
-"""Optional standalone collector that writes NSW parking snapshots into MySQL."""
+"""Optional standalone collector for saving NSW parking snapshots into MySQL."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ KNOWN_UNAVAILABLE_FACILITIES: set[str] = set()
 
 @dataclass
 class Config:
-    """Runtime settings loaded from python/.env or environment variables."""
+    """Settings needed for the NSW API and local MySQL connection."""
     api_key: str
     mysql_host: str
     mysql_port: int
@@ -62,7 +62,7 @@ def log(message: str) -> None:
 
 
 def load_env() -> None:
-    """Load .env manually when python-dotenv is not installed."""
+    """Load python/.env; fall back to a small manual parser if python-dotenv is missing."""
     if load_dotenv and ENV_PATH.exists():
         load_dotenv(ENV_PATH)
         return
@@ -121,7 +121,7 @@ def headers(cfg: Config) -> dict[str, str]:
 
 
 def request_json(url: str, cfg: Config, *, quiet_404: bool = False) -> dict[str, Any] | None:
-    """Fetch one NSW API URL and return decoded JSON, logging recoverable failures."""
+    """Fetch one NSW API URL and return JSON, logging failures instead of crashing immediately."""
     try:
         response = requests.get(url, headers=headers(cfg), timeout=TIMEOUT_SECONDS)
     except requests.RequestException as exc:
@@ -201,7 +201,7 @@ def availability_class(rate: float, available: int) -> str:
 
 
 def extract_fields(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """Normalize one raw API facility response into database-ready fields."""
+    """Turn one raw NSW facility response into the fields stored by the app."""
     if not isinstance(payload, dict):
         return None
 
@@ -243,7 +243,7 @@ def extract_fields(payload: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def upsert_facility(cur, item: dict[str, Any]) -> None:
-    """Insert or update static facility metadata such as name, location, and capacity."""
+    """Insert or update facility metadata like name, location, and capacity."""
     cur.execute(
         """
         INSERT INTO parking_facilities (facility_id, facility_name, latitude, longitude, capacity)
@@ -265,7 +265,7 @@ def upsert_facility(cur, item: dict[str, Any]) -> None:
 
 
 def insert_snapshot(cur, item: dict[str, Any]) -> None:
-    """Insert the time-based occupancy reading for a facility."""
+    """Save one timestamped occupancy reading for a facility."""
     cur.execute(
         """
         INSERT INTO occupancy_snapshots
@@ -297,7 +297,7 @@ def insert_snapshot(cur, item: dict[str, Any]) -> None:
 
 
 def collect_once(cfg: Config) -> None:
-    """Run one full API-to-MySQL collection cycle."""
+    """Run one complete cycle from NSW API to MySQL."""
     log("Requesting facility list from NSW Car Park API...")
     payload = request_json(LIST_URL, cfg)
     if not isinstance(payload, dict):
@@ -354,7 +354,7 @@ def collect_once(cfg: Config) -> None:
 
 
 def run_loop(cfg: Config, interval_seconds: int) -> None:
-    """Repeat collection until stopped from the terminal."""
+    """Keep collecting on a timer until the terminal process is stopped."""
     log(f"Live collector started. Interval: {interval_seconds} seconds.")
     try:
         while True:

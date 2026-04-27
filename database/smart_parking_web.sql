@@ -1,5 +1,5 @@
 -- Smart Parking PHP Website - MySQL Import
--- Creates the local database, seed facilities/snapshots, and model metric tables.
+-- Builds the local database with starter parking data and model-result tables.
 CREATE DATABASE IF NOT EXISTS smart_parking_web CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE smart_parking_web;
 SET NAMES utf8mb4;
@@ -13,7 +13,7 @@ DROP TABLE IF EXISTS model_runs;
 DROP TABLE IF EXISTS occupancy_snapshots;
 DROP TABLE IF EXISTS parking_facilities;
 
--- One row per parking site; live sync updates capacity and location metadata.
+-- One row per parking site. Live sync can update capacity and location details.
 CREATE TABLE parking_facilities (
     facility_id VARCHAR(20) PRIMARY KEY,
     facility_name VARCHAR(255) NOT NULL,
@@ -24,7 +24,7 @@ CREATE TABLE parking_facilities (
     operating_hours_json TEXT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Time-series occupancy readings used by dashboard KPIs, charts, and model training.
+-- Timestamped occupancy readings used by KPIs, charts, and XGBoost training.
 CREATE TABLE occupancy_snapshots (
     snapshot_id INT AUTO_INCREMENT PRIMARY KEY,
     facility_id VARCHAR(20) NOT NULL,
@@ -47,7 +47,7 @@ CREATE TABLE occupancy_snapshots (
         ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Imported fallback regression metrics used before a live XGBoost run exists.
+-- Fallback regression metrics shown before a live XGBoost run is available.
 CREATE TABLE model_regression_metrics (
     metric_id INT AUTO_INCREMENT PRIMARY KEY,
     facility_id VARCHAR(20) NOT NULL,
@@ -60,7 +60,7 @@ CREATE TABLE model_regression_metrics (
         ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Imported fallback classification metrics used before a live XGBoost run exists.
+-- Fallback classification metrics shown before a live XGBoost run is available.
 CREATE TABLE model_classification_metrics (
     metric_id INT AUTO_INCREMENT PRIMARY KEY,
     facility_id VARCHAR(20) NOT NULL,
@@ -71,7 +71,7 @@ CREATE TABLE model_classification_metrics (
         ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Stores each XGBoost training run and links it to metrics, predictions, and artifacts.
+-- One record per XGBoost training run, used to find the latest completed model.
 CREATE TABLE model_runs (
     run_id INT AUTO_INCREMENT PRIMARY KEY,
     model_name VARCHAR(64) NOT NULL,
@@ -85,7 +85,7 @@ CREATE TABLE model_runs (
     KEY idx_model_runs_lookup (model_name, snapshot_source, run_status, trained_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Per-facility validation metrics from the latest trained XGBoost model.
+-- Per-facility validation scores from a trained XGBoost model run.
 CREATE TABLE facility_metrics (
     metric_id INT AUTO_INCREMENT PRIMARY KEY,
     run_id INT NOT NULL,
@@ -105,7 +105,7 @@ CREATE TABLE facility_metrics (
         ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Persisted +1h, +2h, and +3h XGBoost predictions used by dashboard cards.
+-- Stored +1h, +2h, and +3h predictions used by Dashboard and Facilities cards.
 CREATE TABLE predictions (
     pred_id INT AUTO_INCREMENT PRIMARY KEY,
     run_id INT NOT NULL,
@@ -125,7 +125,7 @@ CREATE TABLE predictions (
         ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- File paths for saved XGBoost model JSON and feature-column artifacts.
+-- Paths to saved model files so each training run can be traced.
 CREATE TABLE model_artifacts (
     artifact_id INT AUTO_INCREMENT PRIMARY KEY,
     run_id INT NOT NULL,
@@ -138,7 +138,7 @@ CREATE TABLE model_artifacts (
         ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Seed facility list so the website works immediately after import.
+-- Starter facility list so the site has data immediately after import.
 INSERT INTO parking_facilities (facility_id, facility_name, latitude, longitude, capacity) VALUES
 ('3', 'Bella Vista Station Car Park (historical only)', NULL, NULL, 800),
 ('4', 'Hills Showground Station Car Park (historical only)', NULL, NULL, 600),
@@ -183,7 +183,7 @@ INSERT INTO parking_facilities (facility_id, facility_name, latitude, longitude,
 ('489', 'Park&Ride - Manly Vale', -33.786536, 151.267221, 142),
 ('490', 'Park&Ride - Brookvale', -33.767366, 151.269667, 246);
 
--- Seed snapshot history used for charts and fallback model metrics before live sync runs.
+-- Starter snapshot history for charts and fallback metrics before the live sync runs.
 INSERT INTO occupancy_snapshots (facility_id, recorded_at, occupied, available, occupancy_rate, availability_class, hour, day_of_week, is_weekend, month) VALUES
 ('10', '2026-03-04 10:22:06', 23, 210, 0.0987, 'Available', 10, 2, 0, 3),
 ('10', '2026-03-04 10:27:06', 22, 211, 0.0944, 'Available', 10, 2, 0, 3),
@@ -3106,7 +3106,7 @@ INSERT INTO occupancy_snapshots (facility_id, recorded_at, occupied, available, 
 ('9', '2026-03-04 16:04:46', 0, 931, 0.0000, 'Available', 16, 2, 0, 3),
 ('9', '2026-03-04 16:09:47', 0, 931, 0.0000, 'Available', 16, 2, 0, 3);
 
--- Seed regression summary shown only when no trained XGBoost metrics are available.
+-- Starter regression summary, used only until trained XGBoost metrics exist.
 INSERT INTO model_regression_metrics (facility_id, sample_size, mae, rmse, r2) VALUES
 ('3', 14, 0.000000, 0.000000, NULL),
 ('4', 14, 0.000000, 0.000000, NULL),
@@ -3151,7 +3151,7 @@ INSERT INTO model_regression_metrics (facility_id, sample_size, mae, rmse, r2) V
 ('489', 14, 0.000000, 0.000000, NULL),
 ('490', 14, 0.000485, 0.001166, 0.596837);
 
--- Seed classification summary shown only when no trained XGBoost metrics are available.
+-- Starter classification summary, used only until trained XGBoost metrics exist.
 INSERT INTO model_classification_metrics (facility_id, sample_size, accuracy) VALUES
 ('3', 14, 1.000000),
 ('4', 14, 1.000000),
