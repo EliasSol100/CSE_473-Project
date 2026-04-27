@@ -1,5 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap");
 
+/* Theme tokens used across every page, including Chart.js color variables. */
 :root {
     --bg: #eef3fa;
     --bg-soft: #f8fbff;
@@ -75,6 +76,7 @@
     color-scheme: light;
 }
 
+/* Dark mode swaps the same tokens so components do not need separate styles. */
 [data-theme="dark"] {
     --bg: #08121f;
     --bg-soft: #0b1728;
@@ -182,6 +184,7 @@ img {
     width: min(1380px, calc(100% - 36px));
 }
 
+/* Shared header, brand, navigation, and theme toggle. */
 .site-header {
     position: sticky;
     top: 0;
@@ -349,6 +352,7 @@ img {
     padding: 34px 0 60px;
 }
 
+/* Main reusable surfaces: hero, KPI cards, panels, tables, charts, and notices. */
 .hero,
 .card,
 .panel,
@@ -462,6 +466,7 @@ a.btn-primary:focus-visible,
     pointer-events: none;
 }
 
+/* Responsive grid utilities used by the dashboard, insights, events, and about pages. */
 .kpi-grid,
 .info-grid,
 .chart-grid,
@@ -558,6 +563,7 @@ a.btn-primary:focus-visible,
     font-weight: 700;
 }
 
+/* Availability status pills use the same classes for current and predicted states. */
 .status-pill {
     display: inline-flex;
     padding: 8px 12px;
@@ -581,6 +587,7 @@ a.btn-primary:focus-visible,
     color: var(--danger);
 }
 
+/* Tables are horizontally scrollable so dense facility/event rows stay usable on mobile. */
 .table-wrap {
     overflow-x: auto;
 }
@@ -713,6 +720,7 @@ tbody tr:hover {
     border-color: var(--focus-border);
 }
 
+/* Filter controls share one grid layout across facilities and event forecast views. */
 .filters {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -840,6 +848,7 @@ tbody tr:hover {
     max-width: 720px;
 }
 
+/* Breakpoints keep text, filters, and card grids readable on tablets and phones. */
 @media (max-width: 900px) {
     .section-title {
         align-items: start;

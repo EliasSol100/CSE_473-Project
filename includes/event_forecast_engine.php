@@ -2,6 +2,7 @@
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/event_live_sources.php';
 
+// Event forecast engine: joins official events, live parking snapshots, and short-range predictions.
 function events_timezone(): DateTimeZone
 {
     static $timezone = null;
@@ -18,6 +19,7 @@ function events_upcoming_bundle(?DateTimeImmutable $referenceNow = null): array
     $now = $referenceNow instanceof DateTimeImmutable
         ? $referenceNow->setTimezone(events_timezone())
         : new DateTimeImmutable('now', events_timezone());
+    // Start from the live event catalog, then keep only events inside the seven-day window.
     $catalogBundle = events_live_catalog_bundle($now);
     $allEvents = is_array($catalogBundle['events'] ?? null) ? $catalogBundle['events'] : [];
     $today = $now->setTime(0, 0, 0);
@@ -35,6 +37,7 @@ function events_upcoming_bundle(?DateTimeImmutable $referenceNow = null): array
 
     usort($upcoming, fn(array $a, array $b) => strcmp($a['starts_at'], $b['starts_at']));
 
+    // Parking forecasts are built from the same latest snapshots used by the dashboard.
     $latestSnapshots = latest_snapshots();
     $facilities = events_prepare_facilities($latestSnapshots);
     $modelPredictions = ml_model_predictions_lookup(snapshot_data_source());
@@ -68,6 +71,7 @@ function events_select_event(array $events, ?string $selectedEventId = null): ?a
 
 function events_view_payload(?string $selectedEventId = null, ?string $selectedCategory = null): array
 {
+    // Build one payload that can serve both the Events overview and detail page.
     $bundle = events_upcoming_bundle();
     $allEvents = $bundle['events'];
     $categorySlug = events_normalize_category_slug($selectedCategory);
@@ -109,6 +113,7 @@ function events_normalize_category_slug(?string $selectedCategory): string
 function events_filter_by_category(array $events, string $categorySlug): array
 {
     if ($categorySlug === 'all') {
+        // Preserve an "active" category label even when no filter is applied.
         return array_map(
             static fn(array $event): array => array_merge($event, [
                 'active_category_slug' => (string) ($event['category_slug'] ?? 'event'),
@@ -203,6 +208,7 @@ function events_prepare_facilities(array $latest): array
         $byName[strtolower(trim((string) $row['facility_name']))] = $row;
     }
 
+    // Some imported historical rows provide coordinates that can help matching older names.
     $aliases = [
         'bella vista station car park (historical only)' => 'park&ride - bella vista',
         'hills showground station car park (historical only)' => 'park&ride - hills showground',
@@ -243,6 +249,7 @@ function events_prepare_facilities(array $latest): array
 
 function events_build_forecast(array $event, array $facilities, array $modelPredictions = []): array
 {
+    // Estimate how event demand spreads across monitored facilities by distance, capacity, and corridor keywords.
     $now = new DateTimeImmutable('now', events_timezone());
     $start = events_parse_datetime($event['starts_at']);
     $end = events_parse_datetime($event['ends_at']);
@@ -317,6 +324,7 @@ function events_build_forecast(array $event, array $facilities, array $modelPred
         }
 
         foreach ($horizonHours as $hoursAhead) {
+            // Event-day forecasts are limited to +1h, +2h, and +3h for practical accuracy.
             if (!$isPredictionDay) {
                 $horizonForecasts[(string) $hoursAhead] = [
                     'hours_ahead' => $hoursAhead,
@@ -378,6 +386,7 @@ function events_build_forecast(array $event, array $facilities, array $modelPred
         $displayEventLift = $effectiveLift;
 
         if ($isPredictionDay) {
+            // For summary cards, show the worst short-range horizon so pressure is not understated.
             $shortRangeForecast = events_worst_horizon_forecast($horizonForecasts);
             if ($shortRangeForecast !== null) {
                 $displayPredictedOccupied = (int) ($shortRangeForecast['predicted_occupied'] ?? $predictedOccupied);
@@ -521,6 +530,7 @@ function events_status_rank(?string $status): int
 
 function events_worst_horizon_forecast(array $horizonForecasts): ?array
 {
+    // Choose the highest-pressure horizon; if status ties, choose the higher occupancy rate.
     $selected = null;
 
     foreach ($horizonForecasts as $forecast) {
@@ -625,6 +635,7 @@ function events_baseline_profiles(int $hour, ?int $isWeekend): array
         return $cache[$cacheKey];
     }
 
+    // Average nearby hours to avoid overreacting to a single historical timestamp.
     $hourStart = max(0, $hour - 1);
     $hourEnd = min(23, $hour + 1);
     $sourceCondition = snapshot_source_condition('s');
@@ -673,6 +684,7 @@ function events_baseline_profiles(int $hour, ?int $isWeekend): array
 
 function events_facility_weight(array $event, array $facility): float
 {
+    // Higher weights receive a larger share of the event's estimated spillover vehicles.
     $facilityName = strtolower($facility['facility_name']);
     $distanceWeight = (float) ($event['network_floor'] ?? 0.01);
     $distanceKm = null;

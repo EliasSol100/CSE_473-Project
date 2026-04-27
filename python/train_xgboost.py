@@ -1,3 +1,5 @@
+"""Train and persist XGBoost models for Smart Parking short-range forecasts."""
+
 from __future__ import annotations
 
 import argparse
@@ -60,6 +62,7 @@ R2_MIN_TARGET_STD = 0.015
 
 
 def load_environment() -> None:
+    """Load database/API settings from either the project root or python/.env."""
     for candidate in (ROOT / ".env", ROOT / "python" / ".env"):
         if candidate.exists():
             load_dotenv(candidate, override=False)
@@ -95,6 +98,7 @@ def connect_db():
 
 
 def choose_source(connection, requested: str) -> str:
+    """Select live data when the collector is active, otherwise use imported seed data."""
     requested = requested.strip().lower()
     if requested in {"live", "seed"}:
         return requested
@@ -126,6 +130,7 @@ def availability_class(available: int | None, occupancy_rate: float) -> str:
 
 
 def add_history_features(history: pd.DataFrame) -> pd.DataFrame:
+    """Create lag/rolling features so XGBoost can learn recent occupancy movement."""
     if history.empty:
         return history
 
@@ -223,6 +228,7 @@ def nearest_future_index(times_ns, target_ns: int, max_diff_ns: int) -> int | No
 
 
 def build_training_examples(history: pd.DataFrame) -> pd.DataFrame:
+    """Turn each snapshot into +1h, +2h, and +3h supervised training examples."""
     import numpy as np
 
     examples: list[dict] = []
@@ -311,6 +317,7 @@ def align_columns(frame: pd.DataFrame, feature_columns: Iterable[str]) -> pd.Dat
 
 
 def train_models(train_examples: pd.DataFrame, feature_columns: list[str]):
+    """Fit one regressor for occupancy rate and one classifier for availability status."""
     regressor = XGBRegressor(
         n_estimators=450,
         max_depth=3,
@@ -348,6 +355,7 @@ def train_models(train_examples: pd.DataFrame, feature_columns: list[str]):
 
 
 def compute_per_facility_metrics(test_examples: pd.DataFrame, regression_predictions, classification_predictions) -> pd.DataFrame:
+    """Calculate validation metrics shown in the Insights page."""
     metrics_rows: list[dict] = []
     test_frame = test_examples.copy()
     test_frame["predicted_rate"] = regression_predictions
@@ -363,6 +371,7 @@ def compute_per_facility_metrics(test_examples: pd.DataFrame, regression_predict
         mae = float(mean_absolute_error(actual_rate, predicted_rate))
         rmse = float(math.sqrt(mean_squared_error(actual_rate, predicted_rate)))
         r2 = None
+        # R2 is hidden for nearly flat facilities because tiny variance makes it misleading.
         if sample_size >= 2 and actual_rate.nunique() >= 2 and float(actual_rate.std(ddof=0)) >= R2_MIN_TARGET_STD:
             r2 = float(r2_score(actual_rate, predicted_rate))
         accuracy = float(accuracy_score(actual_class, predicted_class))
@@ -389,6 +398,7 @@ def latest_feature_rows(history: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_prediction_rows(latest_rows: pd.DataFrame, feature_columns: list[str], regressor, classifier) -> pd.DataFrame:
+    """Predict current facility availability for the next three Sydney-hour windows."""
     prediction_rows: list[dict] = []
     now = datetime.now(PARKING_TIMEZONE)
 
@@ -455,6 +465,7 @@ def persist_run(
     regressor,
     classifier,
 ) -> int:
+    """Save model artifacts, metrics, and prediction rows to MySQL."""
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     reg_path = MODELS_DIR / f"xgboost_{snapshot_source}_regressor_{timestamp}.json"
@@ -540,6 +551,7 @@ def persist_run(
 
 
 def train(snapshot_source: str) -> dict:
+    """Run the full train/validate/persist workflow for one snapshot source."""
     connection = connect_db()
     try:
         history = fetch_snapshot_history(connection, snapshot_source)
@@ -595,6 +607,7 @@ def train(snapshot_source: str) -> dict:
 
 
 def main() -> int:
+    """CLI entry point used by PHP auto-refresh and manual training runs."""
     parser = argparse.ArgumentParser(description="Train XGBoost parking forecast models and persist predictions to MySQL.")
     parser.add_argument("--source", default="auto", choices=["auto", "live", "seed"], help="Which snapshot source to train on.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output.")

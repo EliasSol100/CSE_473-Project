@@ -1,9 +1,11 @@
 <?php
+// Event Forecast page: shows detailed parking impact for one selected Sydney event.
 $pageTitle = 'Event Forecasts';
 require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/includes/event_forecast_engine.php';
 require_once __DIR__ . '/includes/live_collector.php';
 
+// Detailed forecasts refresh at the same interval as the dashboard live sync.
 $collectorIntervalMs = 10000;
 try {
     $collectorIntervalMs = max(10000, ((int) (live_collector_config()['interval_seconds'] ?? 10)) * 1000);
@@ -21,6 +23,7 @@ $selectedEventId = (string) ($eventsPayload['selected_event_id'] ?? $requestedEv
 $selectedCategory = (string) ($eventsPayload['selected_category'] ?? 'all');
 $featuredForecast = $selectedEvent['featured_forecast'] ?? null;
 $featuredPercent = $featuredForecast ? ((float) $featuredForecast['predicted_rate']) * 100 : 0;
+// These arrays feed the "most impacted facilities" chart when prediction is active.
 $topImpactLabels = $eventsPayload['top_impact_labels'];
 $topImpactValues = $eventsPayload['top_impact_values'];
 $topImpactMetricLabel = (string) ($eventsPayload['top_impact_metric_label'] ?? 'Projected occupancy %');
@@ -234,6 +237,7 @@ $nearbyRadiusLabel = $selectedEvent
     </div>
 </div>
 <script>
+// Store the selected-event payload for app.js filtering and live forecast refreshes.
 window.eventsState = <?= json_encode($eventsPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 window.eventsCharts = {};
 window.eventsCharts.impact = new Chart(document.getElementById('eventImpactChart'), {

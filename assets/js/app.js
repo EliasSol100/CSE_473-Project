@@ -1,4 +1,6 @@
+// Client-side controller for theme switching, table filters, chart updates, and live refreshes.
 document.addEventListener('DOMContentLoaded', () => {
+    // Theme helpers keep CSS variables and Chart.js colors in sync.
     const getRootStyles = () => getComputedStyle(document.documentElement);
     const getChartTheme = () => {
         if (typeof window.smartParkingChartColors === 'function') {
@@ -89,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     syncThemeToggleUi();
 
+    // Formatting helpers mirror the PHP display helpers for live-updated values.
     const numberFormatter = new Intl.NumberFormat('en-US');
 
     const formatNumber = (value) => numberFormatter.format(Number(value) || 0);
@@ -192,6 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
             chartRef[key] = null;
         }
     };
+    // Generic table search used by Facilities and Event Forecast tables.
     const applyTableSearch = (searchInput) => {
         if (!searchInput) {
             return;
@@ -278,6 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
     };
+    // Home renderer updates hero tags, KPI cards, and highlight panels from JSON.
     const renderHomeData = (host, payload) => {
         if (!host || !payload || typeof payload !== 'object') {
             return;
@@ -327,6 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // Dashboard renderer updates KPI cards and all dashboard charts after each sync.
     const renderDashboardData = (host, payload) => {
         if (!host || !payload || typeof payload !== 'object') {
             return;
@@ -408,6 +414,7 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     };
 
+    // Facilities renderer rebuilds rows so filters and selected-facility data stay current.
     const renderFacilitiesTableRows = (facilities, payload) => {
         if (!Array.isArray(facilities) || facilities.length === 0) {
             return '<tr><td colspan="11" class="empty-state">No facilities match the current filters.</td></tr>';
@@ -679,6 +686,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderFacilitiesSelectedShell(host, nextPayload);
         syncFacilitiesSelectionState(host, nextPayload);
     };
+    // Bind once: search, status filter, sort filter, and facility picker all render locally.
     const bindFacilitiesControls = (host) => {
         if (!host || host.dataset.facilitiesControlsBound === 'true') {
             return;
@@ -791,6 +799,7 @@ document.addEventListener('DOMContentLoaded', () => {
             </tr>
         `).join('');
     };
+    // Insights renderer refreshes the analytics cards plus regression/classification tables.
     const renderInsightsData = (host, payload) => {
         if (!host || !payload || typeof payload !== 'object') {
             return;
@@ -864,6 +873,7 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     };
 
+    // About renderer keeps the coverage cards accurate while the sync loop is running.
     const renderAboutData = (host, payload) => {
         if (!host || !payload || typeof payload !== 'object') {
             return;
@@ -1057,6 +1067,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ? previousValue
             : 'all';
     };
+    // Normalize selected event/category state so overview and detail pages share one renderer.
     const buildEventsDisplayState = (host, payload) => {
         const categoryFilter = getEventCategoryFilterValue(host);
         const visibleEvents = Array.isArray(payload.events)
@@ -1107,6 +1118,7 @@ document.addEventListener('DOMContentLoaded', () => {
             );
         }
     };
+    // Event cards are rebuilt from the refreshed official feed and selected category.
     const renderEventCards = (events, selectedEventId) => {
         if (!Array.isArray(events) || events.length === 0) {
             return '<div class="empty-state card" style="grid-column: 1 / -1;">No events match the selected event type right now.</div>';
@@ -1330,6 +1342,7 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }).join('');
     };
+    // Detailed table supports local searching, pressure filters, and multiple sort modes.
     const renderEventsForecastTable = (host, selectedEvent) => {
         if (!host) {
             return;
@@ -1419,6 +1432,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         host.dataset.eventsCategoryControlBound = 'true';
     };
+    // Events renderer updates both the overview cards and the detailed forecast page.
     const renderEventsData = (host, payload) => {
         if (!host || !payload || typeof payload !== 'object') {
             return;
@@ -1565,6 +1579,7 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     };
 
+    // Shared auto-sync loop: run the collector, then fetch the page-specific JSON endpoint.
     const initCollectorSync = ({
         host,
         viewUrl,

@@ -1,8 +1,10 @@
 <?php
+// Insights page: summarizes demand patterns and XGBoost validation metrics.
 $pageTitle = 'Insights';
 require_once __DIR__ . '/includes/page_payloads.php';
 require_once __DIR__ . '/includes/live_collector.php';
 
+// The page refreshes analytics in place while the collector continues to ingest data.
 $collectorIntervalMs = 10000;
 try {
     $collectorIntervalMs = max(10000, ((int) (live_collector_config()['interval_seconds'] ?? 10)) * 1000);
@@ -93,6 +95,7 @@ require_once __DIR__ . '/includes/header.php';
 
 </div>
 <script>
+// Initial analytics state is shared with app.js for live card/table/chart updates.
 window.insightsState = <?= json_encode($insightsPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 window.insightsCharts = {};
 window.insightsCharts.topAverage = new Chart(document.getElementById('topAverageChart'), {

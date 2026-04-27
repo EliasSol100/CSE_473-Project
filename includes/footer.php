@@ -1,3 +1,4 @@
+<!-- Shared footer and JavaScript bundle included at the end of every page. -->
 </main>
 <footer class="site-footer">
     <div class="container footer-grid">

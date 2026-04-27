@@ -1,4 +1,5 @@
 <?php
+// JSON endpoint for the Dashboard live KPIs, charts, and prediction totals.
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
@@ -7,6 +8,7 @@ require_once __DIR__ . '/../includes/functions.php';
 $summary = summary_metrics();
 $latest = latest_snapshots();
 $topLatest = array_slice($latest, 0, 8);
+// Build predictions from XGBoost when available, otherwise the PHP fallback is used.
 $predictionBundle = facility_hourly_predictions($latest);
 
 echo json_encode([

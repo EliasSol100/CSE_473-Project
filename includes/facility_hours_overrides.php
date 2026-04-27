@@ -1,6 +1,7 @@
 <?php
 
 // Manually maintained operating-hours overrides.
+// These keep the dashboard cards stable when the NSW API does not publish hours metadata.
 // Default baseline applied to avoid unknown-hour UI states; update rows as you confirm exact hours.
 return [
     '486' => ['hours' => 'Open 24/7', 'is_open_24_7' => 1], // Park&Ride - Ashfield

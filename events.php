@@ -1,9 +1,11 @@
 <?php
+// Events page: combines official Sydney events with nearby parking pressure forecasts.
 $pageTitle = 'Events';
 require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/includes/event_forecast_engine.php';
 require_once __DIR__ . '/includes/live_collector.php';
 
+// Auto-sync keeps the event cards aligned with the newest parking snapshots.
 $collectorIntervalMs = 10000;
 try {
     $collectorIntervalMs = max(10000, ((int) (live_collector_config()['interval_seconds'] ?? 10)) * 1000);
@@ -107,6 +109,7 @@ $eventsSyncUrl = 'api/events_summary.php';
     </div>
 </div>
 <script>
+// app.js reuses this payload when filtering event categories and refreshing forecasts.
 window.eventsState = <?= json_encode($eventsPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 </script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

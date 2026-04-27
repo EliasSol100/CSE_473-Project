@@ -1,5 +1,6 @@
 <?php
 
+// XGBoost integration helpers: find latest runs, read predictions, and retrain when due.
 const ML_MODEL_NAME = 'xgboost';
 const ML_MODEL_REFRESH_SECONDS = 300;
 const ML_MODEL_LOCK_FILE = __DIR__ . '/../logs/xgboost_training.lock';
@@ -13,6 +14,7 @@ function ml_model_snapshot_source(?string $snapshotSource = null): string
     }
 
     if (function_exists('snapshot_data_source')) {
+        // Mirror the PHP page data source so model metrics match the visible dashboard data.
         $resolved = strtolower(trim((string) snapshot_data_source()));
         if ($resolved === 'live' || $resolved === 'seed') {
             return $resolved;
@@ -25,6 +27,7 @@ function ml_model_snapshot_source(?string $snapshotSource = null): string
 function ml_model_latest_run(?string $snapshotSource = null): ?array
 {
     $snapshotSource = ml_model_snapshot_source($snapshotSource);
+    // Predictions are stored by facility and horizon, e.g. [facility_id]["1"] for +1h.
     $connection = db();
     $stmt = $connection->prepare(
         "SELECT run_id, model_name, snapshot_source, run_status, trained_at, training_rows, validation_rows, feature_count, notes
@@ -189,6 +192,7 @@ function ml_model_refresh_if_due(?string $snapshotSource = null, bool $force = f
         ];
     }
 
+    // A lock file prevents overlapping training jobs from multiple browser syncs.
     if (is_file(ML_MODEL_LOCK_FILE) && (time() - (int) @filemtime(ML_MODEL_LOCK_FILE)) < 1800) {
         return [
             'status' => 'busy',
@@ -217,6 +221,7 @@ function ml_model_refresh_if_due(?string $snapshotSource = null, bool $force = f
 
         $decoded = json_decode($outputText, true);
         if (!is_array($decoded)) {
+            // Python may print warnings before JSON, so recover the last valid JSON line.
             $lines = preg_split('/\r\n|\r|\n/', $outputText) ?: [];
             for ($index = count($lines) - 1; $index >= 0; $index--) {
                 $candidate = trim((string) $lines[$index]);

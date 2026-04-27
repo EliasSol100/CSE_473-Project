@@ -1,3 +1,4 @@
+# Runtime packages for the Python live collector and XGBoost training workflow.
 requests>=2.31.0
 python-dotenv>=1.0.1
 PyMySQL>=1.1.0

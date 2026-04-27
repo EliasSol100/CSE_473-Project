@@ -1,8 +1,10 @@
 <?php
+// Home page: prepares the landing-page summary cards and live-refresh payload.
 $pageTitle = 'Home';
 require_once __DIR__ . '/includes/page_payloads.php';
 require_once __DIR__ . '/includes/live_collector.php';
 
+// Use the collector interval from configuration, with 10 seconds as the safe UI default.
 $collectorIntervalMs = 10000;
 try {
     $collectorIntervalMs = max(10000, ((int) (live_collector_config()['interval_seconds'] ?? 10)) * 1000);
@@ -83,6 +85,7 @@ require_once __DIR__ . '/includes/header.php';
     </section>
 </div>
 <script>
+// Initial state lets app.js refresh the page in place after each live sync.
 window.homeState = <?= json_encode($homePayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 </script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

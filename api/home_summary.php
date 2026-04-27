@@ -1,4 +1,5 @@
 <?php
+// JSON endpoint used by app.js to refresh the Home page summary without reloading.
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
