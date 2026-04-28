@@ -55,10 +55,10 @@ function facilities_page_payload(string $selectedFacilityId = ''): array
     ];
 }
 
-function insights_average_accuracy(array $classificationMetrics): float
+function insights_average_accuracy(array $classificationMetrics): ?float
 {
     if ($classificationMetrics === []) {
-        return 0.0;
+        return null;
     }
 
     $scores = array_map(
@@ -83,17 +83,23 @@ function insights_page_payload(): array
     $metricsSourceLabel = $metricsSource === 'live' ? 'Live collector history' : 'Imported SQL baseline';
     // The note text explains whether the user is seeing XGBoost results or fallback metrics.
     if ($predictionModel === 'xgboost') {
-        $classificationContextNote = 'Average classification accuracy is calculated from the current XGBoost model, validated against real held-out facility history.';
+        $regressionTitle = 'XGBoost regression performance (lowest RMSE)';
+        $classificationTitle = 'XGBoost classification accuracy by facility';
+        $classificationContextNote = 'Average classification accuracy is calculated from current XGBoost facility rows whose validation slice contains at least two observed classes.';
         $regressionNote = 'Shows the lowest RMSE facilities from the current XGBoost occupancy-rate model using real historical training data.';
         $classificationNote = 'Shows how often the XGBoost status model correctly predicted the next observed availability class for each facility.';
     } elseif ($metricsSource === 'live') {
+        $regressionTitle = 'Baseline regression performance (lowest RMSE)';
+        $classificationTitle = 'Baseline classification accuracy (lowest first)';
         $classificationContextNote = 'Average baseline classification accuracy is calculated from real sequential facility history, using the previous recorded status as the next-status baseline.';
         $regressionNote = 'Uses the previous recorded occupancy rate at each facility as the next-reading baseline prediction.';
-        $classificationNote = 'Shows how often the previous recorded availability class matched the next observed class for each facility.';
+        $classificationNote = 'Shows the ten lowest facility scores from the previous-status baseline.';
     } else {
+        $regressionTitle = 'Fallback regression performance (lowest RMSE)';
+        $classificationTitle = 'Fallback classification accuracy (lowest first)';
         $classificationContextNote = 'The live collector is not currently active, so this view is using the imported SQL baseline metrics as a fallback.';
         $regressionNote = 'Showing the regression metrics imported from the SQL setup file as the current fallback baseline.';
-        $classificationNote = 'Showing the classification metrics imported from the SQL setup file as the current fallback baseline.';
+        $classificationNote = 'Showing the ten lowest classification metrics imported from the SQL setup file as the current fallback baseline.';
     }
 
     return [
@@ -108,6 +114,8 @@ function insights_page_payload(): array
         'prediction_model' => $predictionModel,
         'metrics_source' => $metricsSource,
         'metrics_source_label' => $metricsSourceLabel,
+        'regression_title' => $regressionTitle,
+        'classification_title' => $classificationTitle,
         'classification_context_note' => $classificationContextNote,
         'regression_note' => $regressionNote,
         'classification_note' => $classificationNote,

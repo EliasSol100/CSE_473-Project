@@ -294,6 +294,7 @@ def prepare_features(examples: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 
 
 def split_train_test(examples: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Create a temporal hold-out without letting future validation labels into training."""
     ordered = examples.sort_values("source_time").reset_index(drop=True)
     if len(ordered) < 20:
         raise RuntimeError("Not enough historical rows to train XGBoost reliably yet.")
@@ -302,8 +303,16 @@ def split_train_test(examples: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
     if split_index >= len(ordered):
         split_index = len(ordered) - 1
 
-    train_frame = ordered.iloc[:split_index].reset_index(drop=True)
-    test_frame = ordered.iloc[split_index:].reset_index(drop=True)
+    cutoff_time = ordered.iloc[split_index]["source_time"]
+    train_frame = ordered[
+        (ordered["source_time"] <= cutoff_time)
+        & (ordered["target_time"] <= cutoff_time)
+    ].reset_index(drop=True)
+    test_frame = ordered[ordered["source_time"] > cutoff_time].reset_index(drop=True)
+
+    if len(train_frame) < 20 or test_frame.empty:
+        raise RuntimeError("Not enough historical rows to create a temporal validation split.")
+
     return train_frame, test_frame
 
 
@@ -374,7 +383,11 @@ def compute_per_facility_metrics(test_examples: pd.DataFrame, regression_predict
         # Hide R2 for almost-flat facilities because a tiny real-world change can make it misleading.
         if sample_size >= 2 and actual_rate.nunique() >= 2 and float(actual_rate.std(ddof=0)) >= R2_MIN_TARGET_STD:
             r2 = float(r2_score(actual_rate, predicted_rate))
-        accuracy = float(accuracy_score(actual_class, predicted_class))
+        # A validation slice with only one observed class can produce a trivial 100%.
+        # Store classification accuracy only when the facility actually changed class.
+        accuracy = None
+        if actual_class.nunique() >= 2:
+            accuracy = float(accuracy_score(actual_class, predicted_class))
 
         metrics_rows.append(
             {
@@ -563,7 +576,7 @@ def train(snapshot_source: str) -> dict:
             raise RuntimeError(f"Not enough {snapshot_source} training examples to fit XGBoost reliably yet.")
 
         train_examples, test_examples = split_train_test(examples)
-        feature_frame, feature_columns = prepare_features(examples)
+        _, feature_columns = prepare_features(train_examples)
         regressor, classifier = train_models(train_examples, feature_columns)
 
         X_test_raw, _ = prepare_features(test_examples)

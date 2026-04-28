@@ -788,7 +788,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const renderClassificationRows = (rows) => {
         if (!Array.isArray(rows) || rows.length === 0) {
-            return '<tr><td colspan="3" class="empty-state">No classification baseline metrics are available yet.</td></tr>';
+            return '<tr><td colspan="3" class="empty-state">No class-diverse classification validation metrics are available yet.</td></tr>';
         }
 
         return rows.map((row) => `
@@ -817,6 +817,8 @@ document.addEventListener('DOMContentLoaded', () => {
             minTime: host.querySelector('[data-insights-min-time]'),
             maxTime: host.querySelector('[data-insights-max-time]'),
             avgAccuracy: host.querySelector('[data-insights-avg-accuracy]'),
+            regressionTitle: host.querySelector('[data-insights-regression-title]'),
+            classificationTitle: host.querySelector('[data-insights-classification-title]'),
             classificationContext: host.querySelector('[data-insights-classification-context]'),
             regressionNote: host.querySelector('[data-insights-regression-note]'),
             classificationNote: host.querySelector('[data-insights-classification-note]'),
@@ -843,7 +845,13 @@ document.addEventListener('DOMContentLoaded', () => {
             fields.maxTime.textContent = formatUtcDateTime(dataset.max_time);
         }
         if (fields.avgAccuracy) {
-            fields.avgAccuracy.textContent = formatPercentage(payload.avg_accuracy, 1);
+            fields.avgAccuracy.textContent = payload.avg_accuracy == null ? 'N/A' : formatPercentage(payload.avg_accuracy, 1);
+        }
+        if (fields.regressionTitle) {
+            fields.regressionTitle.textContent = payload.regression_title || 'Regression performance (lowest RMSE)';
+        }
+        if (fields.classificationTitle) {
+            fields.classificationTitle.textContent = payload.classification_title || 'XGBoost classification accuracy by facility';
         }
         if (fields.classificationContext) {
             fields.classificationContext.textContent = payload.classification_context_note || '';

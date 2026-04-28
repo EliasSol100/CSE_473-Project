@@ -204,7 +204,7 @@ predictions
 model_artifacts
 ```
 
-The Insights page displays regression metrics such as MAE, RMSE, and R2, plus classification accuracy by facility.
+The training split is temporal: validation examples come from a future hold-out window, and training rows whose target time crosses into that window are excluded. The Insights page displays regression metrics such as MAE, RMSE, and R2. Classification accuracy is shown only for facilities whose validation rows include at least two observed status classes, then sorted lowest first so weaker scores are visible.
 
 ## Optional Python Collector and Training Setup
 

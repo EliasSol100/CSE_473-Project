@@ -987,7 +987,7 @@ function live_baseline_performance_metrics(): array
 
     usort(
         $classification,
-        fn(array $left, array $right) => ((float) $right['accuracy'] <=> (float) $left['accuracy'])
+        fn(array $left, array $right) => ((float) $left['accuracy'] <=> (float) $right['accuracy'])
             ?: strcmp((string) $left['facility_name'], (string) $right['facility_name'])
     );
 
@@ -1015,7 +1015,9 @@ function stored_classification_metrics(): array
         SELECT f.facility_name, m.sample_size, m.accuracy
         FROM model_classification_metrics m
         INNER JOIN parking_facilities f ON f.facility_id = m.facility_id
-        ORDER BY m.accuracy DESC, f.facility_name ASC
+        WHERE m.accuracy IS NOT NULL
+          AND m.accuracy < 0.999999
+        ORDER BY m.accuracy ASC, f.facility_name ASC
     ");
 }
 
@@ -1045,7 +1047,7 @@ function xgboost_classification_metrics(string $source): array
 
     usort(
         $rows,
-        static fn(array $left, array $right): int => ((float) ($right['accuracy'] ?? 0) <=> (float) ($left['accuracy'] ?? 0))
+        static fn(array $left, array $right): int => ((float) ($left['accuracy'] ?? 0) <=> (float) ($right['accuracy'] ?? 0))
             ?: strcmp((string) ($left['facility_name'] ?? ''), (string) ($right['facility_name'] ?? ''))
     );
 

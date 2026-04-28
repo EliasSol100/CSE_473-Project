@@ -35,7 +35,7 @@ require_once __DIR__ . '/includes/header.php';
     <section class="info-grid">
         <article class="notice"><h3>Peak observed hour</h3><p class="muted">The highest average occupancy appears at <strong data-insights-peak-hour><?= h(sprintf('%02d:00', (int) ($peak['hour'] ?? 0))) ?></strong>, reaching <strong data-insights-peak-rate><?= h(format_percentage($peak['average_occupancy'] ?? 0)) ?></strong>.</p></article>
         <article class="notice"><h3>Coverage window</h3><p class="muted">Current records include <strong data-insights-observations><?= h(format_number($dataset['observations'] ?? 0)) ?></strong> observations from <strong data-insights-min-time><?= h(display_datetime($dataset['min_time'] ?? null)) ?></strong> to <strong data-insights-max-time><?= h(display_datetime($dataset['max_time'] ?? null)) ?></strong>.</p></article>
-        <article class="notice"><h3>Classification context</h3><p class="muted">Average classification accuracy is <strong data-insights-avg-accuracy><?= h(format_percentage($insightsPayload['avg_accuracy'] ?? 0, 1)) ?></strong>. <span data-insights-classification-context><?= h($insightsPayload['classification_context_note'] ?? '') ?></span></p></article>
+        <article class="notice"><h3>Classification context</h3><p class="muted">Average classification accuracy is <strong data-insights-avg-accuracy><?= $insightsPayload['avg_accuracy'] === null ? 'N/A' : h(format_percentage($insightsPayload['avg_accuracy'], 1)) ?></strong>. <span data-insights-classification-context><?= h($insightsPayload['classification_context_note'] ?? '') ?></span></p></article>
     </section>
 
     <section class="chart-grid">
@@ -45,7 +45,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <section class="grid-two" style="margin-bottom:24px;">
         <article class="table-card">
-            <h3>XGBoost regression performance (lowest RMSE)</h3>
+            <h3 data-insights-regression-title><?= h($insightsPayload['regression_title'] ?? 'Regression performance (lowest RMSE)') ?></h3>
             <p class="muted" data-insights-regression-note><?= h($insightsPayload['regression_note'] ?? '') ?></p>
             <div class="table-wrap">
                 <table>
@@ -70,14 +70,14 @@ require_once __DIR__ . '/includes/header.php';
         </article>
 
         <article class="table-card">
-            <h3>XGBoost classification accuracy by facility</h3>
+            <h3 data-insights-classification-title><?= h($insightsPayload['classification_title'] ?? 'XGBoost classification accuracy by facility') ?></h3>
             <p class="muted" data-insights-classification-note><?= h($insightsPayload['classification_note'] ?? '') ?></p>
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>Facility</th><th>Samples</th><th>Accuracy</th></tr></thead>
                     <tbody data-insights-classification-body>
                         <?php if ($clsMetrics === []): ?>
-                            <tr><td colspan="3" class="empty-state">No live classification baseline metrics are available yet.</td></tr>
+                            <tr><td colspan="3" class="empty-state">No class-diverse classification validation metrics are available yet.</td></tr>
                         <?php else: ?>
                             <?php foreach ($clsMetrics as $row): ?>
                                 <tr>
